@@ -1140,6 +1140,11 @@ function SlideIntro() {
       const pColors    = new Float32Array(PCOUNT * 3);
       const pSpeeds    = new Float32Array(PCOUNT);
       const pBaseR     = new Float32Array(PCOUNT);      // per-particle resting radius
+      // Per-particle orbital attributes — precomputed so the shader doesn't
+      // re-run atan2 / sqrt per vertex per frame.
+      const pTheta0    = new Float32Array(PCOUNT);      // initial xy angle (radians)
+      const pInPlaneR  = new Float32Array(PCOUNT);      // sqrt(1 - aDir.z²) — orbit radius in xy plane
+      const pOmega     = new Float32Array(PCOUNT);      // per-particle angular speed (rad/s)
       for (let i = 0; i < PCOUNT; i++) {
         // Uniform sphere direction (Marsaglia method)
         const u = Math.random() * 2 - 1;
@@ -1161,12 +1166,22 @@ function SlideIntro() {
         const c = paletteVec3[i % 5];
         pColors[i*3  ] = c.r; pColors[i*3+1] = c.g; pColors[i*3+2] = c.b;
         pSpeeds[i] = 1.5 + Math.random() * 2.2;
+
+        // Orbital attributes around Z-axis (camera-facing). Slight per-
+        // particle ω variation (~0.28-0.60 rad/s, i.e., full revolution
+        // every 10.5-22s) gives a dreamy, non-synchronized swirl.
+        pTheta0[i]   = Math.atan2(dy, dx);
+        pInPlaneR[i] = Math.sqrt(Math.max(0, 1 - dz * dz));
+        pOmega[i]    = 0.28 + Math.random() * 0.32;
       }
-      pGeom.setAttribute('position', new THREE.BufferAttribute(pPositions, 3));
-      pGeom.setAttribute('aDir',     new THREE.BufferAttribute(pDirs, 3));
-      pGeom.setAttribute('aColor',   new THREE.BufferAttribute(pColors, 3));
-      pGeom.setAttribute('aSpeed',   new THREE.BufferAttribute(pSpeeds, 1));
-      pGeom.setAttribute('aBaseR',   new THREE.BufferAttribute(pBaseR, 1));
+      pGeom.setAttribute('position',   new THREE.BufferAttribute(pPositions, 3));
+      pGeom.setAttribute('aDir',       new THREE.BufferAttribute(pDirs, 3));
+      pGeom.setAttribute('aColor',     new THREE.BufferAttribute(pColors, 3));
+      pGeom.setAttribute('aSpeed',     new THREE.BufferAttribute(pSpeeds, 1));
+      pGeom.setAttribute('aBaseR',     new THREE.BufferAttribute(pBaseR, 1));
+      pGeom.setAttribute('aTheta0',    new THREE.BufferAttribute(pTheta0, 1));
+      pGeom.setAttribute('aInPlaneR',  new THREE.BufferAttribute(pInPlaneR, 1));
+      pGeom.setAttribute('aOmega',     new THREE.BufferAttribute(pOmega, 1));
 
       const pMat = new THREE.ShaderMaterial({
         uniforms: {
@@ -1185,6 +1200,9 @@ function SlideIntro() {
           attribute vec3 aColor;
           attribute float aSpeed;
           attribute float aBaseR;
+          attribute float aTheta0;
+          attribute float aInPlaneR;
+          attribute float aOmega;
           uniform float uTime;
           uniform float uBurstTime;
           uniform float uDPR;
@@ -1198,34 +1216,45 @@ function SlideIntro() {
             float t = (uBurstTime < 0.0) ? -1.0 : (uTime - uBurstTime);
             vec3 pos;
             if (t < 0.0) {
-              // Nebulous cloud — particle at base radius with slow drift +
-              // a radial wave propagating outward from origin. The wave
-              // phase depends on distance so pulses visibly travel from
-              // center → edge (fabric ripple effect).
+              // Star-like orbital swirl: each particle traces a circle in
+              // its own z-plane around the Z-axis at angular speed aOmega.
+              // Collectively this reads as a 3-D swirling shell — particles
+              // "floating around like a star" rather than jittering in place.
               float seed = aSpeed * 7.13;
               float driftPhase = uTime * 0.18 + seed;
 
-              // Radial traveling wave: speed ~2.5 units/sec, frequency uPulseFreq Hz.
-              // Phase = (t - d/speed) * freq → each wavelength propagates outward.
+              // Radial traveling wave (same as before — breathing pulse).
               float wavePhase = (uTime - aBaseR / 2.5) * uPulseFreq;
               float wave = sin(wavePhase * 6.2831853) * uPulseAmp;
 
-              // Small 3D drift to keep the cloud alive even at uPulseAmp=0
+              // Small 3-D drift preserves organic feel without fighting the orbit.
               vec3 drift = vec3(
-                sin(driftPhase * 0.63 + seed * 1.9) * 0.06,
-                cos(driftPhase * 0.41 + seed * 3.1) * 0.06,
-                sin(driftPhase * 0.57 + seed * 2.3) * 0.06
+                sin(driftPhase * 0.63 + seed * 1.9) * 0.04,
+                cos(driftPhase * 0.41 + seed * 3.1) * 0.04,
+                sin(driftPhase * 0.57 + seed * 2.3) * 0.04
               );
 
-              // Resting radius offset by wave
+              // Resting radius offset by breathing wave.
               float r = aBaseR + wave;
-
-              // Convergence: uCollapse pulls every particle toward origin
+              // Convergence: uCollapse pulls every particle toward origin.
               r = mix(r, 0.02, uCollapse);
-              // Drift also damps during collapse so the convergence reads clean
+
+              // Orbital angle. The spiralBoost term accelerates rotation as
+              // the collapse deepens (uCollapse² × 8 rad ≈ 2.5 extra
+              // revolutions over the 0.35 s implosion), so particles spiral
+              // inward rather than tracking a straight radial pull.
+              float spiralBoost = uCollapse * uCollapse * 8.0;
+              float theta = aTheta0 + uTime * aOmega + spiralBoost;
+              vec3 rotDir = vec3(
+                aInPlaneR * cos(theta),
+                aInPlaneR * sin(theta),
+                aDir.z
+              );
+
+              // Drift damps during collapse so the spiral reads clean.
               vec3 driftActive = drift * (1.0 - uCollapse);
 
-              pos = aDir * r + driftActive;
+              pos = rotDir * r + driftActive;
 
               // Alpha breathes gently + brightens on the leading edge of
               // each wave (positive-phase crests more visible).

@@ -1,7 +1,7 @@
 # CLAUDE.md — `ai-pe-deck` (AI in Power Electronics)
 
-**Last refreshed:** 2026-04-21 (post-audio engineering session — cinematic big-bang bed + impact stack)
-**Repo:** `github.com/Aswin-Ram-K/ai-pe-deck` · branch `main` · tracked HEAD `394e3cc`
+**Last refreshed:** 2026-04-21 (post-audio engineering session — cinematic big-bang bed + impact stack + 7.5s ms-display countdown)
+**Repo:** `github.com/Aswin-Ram-K/ai-pe-deck` · branch `main` · tracked HEAD `e065ac5`
 **Also read:** `PROJECT_CONTEXT.md` (design-decision log) · `SESSION_STATE.md` (session handoff + last-prompts packet) · `SPEAKER_SCRIPT.md` (canonical teleprompter source, Stark-edition) · `UNDERSTANDING_NOTES.md` (per-slide Q&A preparation) · `README.md` (user-facing run guide)
 
 ---
@@ -36,7 +36,7 @@ React+Babel load from CDN and `deck.jsx` is transpiled in-browser at boot.
 | ✅ Committed | **Countdown-to-flash sync** — phone fires `{action:'start'}` at T+3.55 s so count=0 "GO" coincides with the visual big-bang flash at +6.45 s into cosmic (not the cosmic *start*) |
 | ✅ Committed | **Deck-side cinematic audio** (classroom speakers): ambient bed (sub drone A1 + A3/E4/A4 pad with pulse-synced wobble LFO 0.8→18 Hz + decoupled dual-delay space reverb) + tension riser (noise 200→8000 Hz + saw 110→880 Hz) + A6 shimmer-bell anticipation + Tenet-style reverse swell (4500→300 Hz bandpass) + sidechain duck during held singularity + 5-layer broadband impact stack on the flash frame (sub kick / mid body / hi transient / FM tonal / roar). All procedural WebAudio, zero asset fetches. Gesture-unlock listener on deck window. |
 
-**Branch state:** clean, HEAD `394e3cc` pushed to `origin/main`. Pages deploys green (last run `24738214741`).
+**Branch state:** clean, HEAD `e065ac5` pushed to `origin/main`. Pages deploys green (last ran on `e065ac5` push).
 
 ---
 

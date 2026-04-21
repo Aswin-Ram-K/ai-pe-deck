@@ -1,9 +1,9 @@
 # SESSION_STATE.md — AI-PE Deck
 
-**Paused:** 2026-04-21 (evening session — cinematic big-bang audio: deck-side ambient bed, countdown-to-flash sync, reverb whine fix, pad wobble, 5-layer impact stack)
+**Paused:** 2026-04-21 (evening session — cinematic big-bang audio + 7.5s countdown with ms display + boosted build-up)
 **Branch:** `main` (clean — no uncommitted tracked files)
-**HEAD:** `394e3cc` feat(intro): cinematic big-bang audio + pad wobble + reverb fix
-**Main status:** pushed to `origin/main`; Pages deploy `24738214741` in_progress at pause (typically ~25 s to green).
+**HEAD:** `e065ac5` feat(countdown): 7.5s countdown with ms display + boosted build-up audio
+**Main status:** pushed to `origin/main`; latest Pages deploy triggered by `e065ac5` (typically ~25 s to green).
 
 ---
 
@@ -29,14 +29,15 @@ Workflow: `.github/workflows/pages.yml` → deploys `public/` on every push to `
 **Pacing / teleprompter (`public/remote.js`):**
 - `TELE_SPEED_MULTIPLIER` (currently `1.0` = exact syllable budgets). Higher = slower scroll across all slides proportionally.
 - `BREATHER_MS` (currently `1000`) — hold at slide top before scroll begins.
-- `COUNTDOWN_SEC` (currently `10`) — BIG BANG countdown length.
-- `VISUAL_FLASH_OFFSET_MS` (currently `6450`) — how far before count=0 the explode fires so the visual flash aligns with "GO".
+- `COUNTDOWN_SEC` (currently `7.5`) — BIG BANG countdown length. Fractional seconds supported; display shows `S.MMM` via rAF.
+- `VISUAL_FLASH_OFFSET_MS` (currently `6450`) — how far before count=0 the explode fires so the visual flash aligns with "GO". Auto-computes `explodeDelayMs`; stays correct for any `COUNTDOWN_SEC ≥ VISUAL_FLASH_OFFSET_MS/1000`.
 
 **Audio (`public/remote-host.js`, deck-side ambient + impact):**
 - `AMBIENT_SUSTAIN_GAIN` (currently `0.16`) — bed max volume. Raise to 0.20 if inaudible on classroom speakers; lower to 0.12 if it competes with presenter's voice.
 - `AMBIENT_FADE_IN_SEC` (currently `5.5`) — drawn-out softer transition.
 - `AMBIENT_WOBBLE_DEPTH_MAX` (currently `0.14`) — depth of pad's pulse-synced AM wobble. Lower = subtler tremor.
 - `AMBIENT_DUCK_DEPTH` (currently `0.20`) — how silent the bed gets during the 100 ms "held breath" right before impact. Lower = more dramatic contrast.
+- Build-up peaks (currently boosted from initial values): radial pulse `0.50`, riser noise `0.42`, riser tone `0.22`, reverse swell `0.44`. Lower toward the original set (`0.34 / 0.22 / 0.11 / 0.32`) if build-up overshadows the impact on classroom speakers.
 - Impact layer peaks are inline in `_scheduleBigBangImpact` (sub 0.52, mid 0.38, hi 0.28, FM 0.22, roar 0.20). Scale proportionally if the hit is too gentle or too hot.
 
 ---
@@ -113,6 +114,19 @@ Workflow: `.github/workflows/pages.yml` → deploys `public/` on every push to `
 ### D19 — Softer, longer fade-in
 **Prompt:** "increase the fade-in period a little bit more. Three seconds seems a little too sharp for the loudness you are achieving, so reduce the maximum loudness and draw out the transition a little bit more."
 **Landed:** `AMBIENT_FADE_IN_SEC`: 3.0 → 5.5s. `AMBIENT_SUSTAIN_GAIN`: 0.26 → 0.16. Lower bed also leaves more headroom for the impact layers. Commit `394e3cc`.
+
+### D21 — Shorter countdown with ms-precision display
+**Prompt:** "okay actually increase the max volume of the build up sound, and shorten the countdown to 7.5 secons and show milliseconds on the countdown"
+**Landed:** `COUNTDOWN_SEC: 10 → 7.5` (fractional seconds supported). rAF-driven display shows `S.MMM` format (e.g., `7.482`) refreshed every frame. Voice + 440 Hz tick pre-scheduled at each integer crossing via setTimeout ("seven" at t=500ms when display crosses 7.000, "six" at t=1500ms, ..., "one" at t=6500ms, "go" at t=7500ms). Pulse animation re-triggers on integer-crossings matching the voice beat. `explodeDelayMs` auto-computed from `COUNTDOWN_SEC*1000 - VISUAL_FLASH_OFFSET_MS` → 1050ms at current settings, so count=0 still aligns with the visual flash at t=7500ms. Commit `e065ac5`.
+
+### D22 — Build-up volume boosted (bed + impact untouched)
+**Prompt:** "increase the max volume of the build up sound" (part of the same message as D21).
+**Landed:** Peak gain bumps on the build-up layers only:
+- Radial pulse bass: 0.34 → 0.50 (+3.3 dB)
+- Tension riser noise: 0.22 → 0.42 (+5.6 dB)
+- Tension riser tone: 0.11 → 0.22 (+6.0 dB)
+- Reverse swell: 0.32 → 0.44 (+2.8 dB)
+Ambient bed sustain unchanged at 0.16; impact stack unchanged. Build-up now reads with more urgency while impact-vs-bed contrast stays intact. Commit `e065ac5`.
 
 ### D20 — Cinematic 5-layer impact stack at the flash frame
 **Prompt:** "I want the sound effect to support the animation you've created in terms of the explosion as well. I want the sound effects to drive the animation home, so do necessary audio engineering, do some Do any web searches as well…"

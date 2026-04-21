@@ -20,11 +20,11 @@
 (() => {
   const $ = (id) => document.getElementById(id);
 
-  const PEER_ID = 'ai-pe-deck-aswin-ram-k-ece563';
+  const PEER_ID = 'ai-pe-deck-ece563-liveroom-2026a';
 
   /* Bumps per deploy so iOS Safari can't serve cached assets after
    * we ship a fix. Seen as ?v=<stamp> on remote.js + speaker-script.json. */
-  const BUILD_VERSION = '20260421-turn-fallback';
+  const BUILD_VERSION = '20260421-fresh-peerid';
 
   /* Total presentation budget used by the "Total" countdown in the
    * timer strip. Starts the moment the teleprompter lands on a

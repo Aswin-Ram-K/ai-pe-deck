@@ -79,7 +79,7 @@ const AMBIENT_RELEASE_DURATION_SEC = 1.8;
       specific long string could also connect. That's fine for a
       15-minute presentation. Change the suffix if you reuse this
       engine on a different deck. */
-  const PEER_ID = 'ai-pe-deck-aswin-ram-k-ece563';
+  const PEER_ID = 'ai-pe-deck-ece563-liveroom-2026a';
 
   let peer = null;
   let peerReady = false;

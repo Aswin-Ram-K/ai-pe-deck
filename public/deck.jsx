@@ -405,7 +405,6 @@ function Sparkline({ width = 260, height = 64, trend = 'up', thresholdAt, color,
   const strokeColor = color || 'var(--accent)';
   // Unique clip id so multiple sparklines on a slide don't collide.
   const clipId = `spark-clip-${Math.abs(Math.round(seedOffset * 999 + width + height))}`;
-  const headY = first[1];
   return (
     <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ overflow: 'visible' }}>
       <defs>
@@ -433,8 +432,6 @@ function Sparkline({ width = 260, height = 64, trend = 'up', thresholdAt, color,
                     strokeLinejoin="round" strokeLinecap="round" />
         </g>
       </g>
-      {/* Live "head" dot at the right edge of the clipped window */}
-      <circle className="spark-head" cx={period - 2} cy={headY} r="2.8" fill={strokeColor} />
       {labelRight && (
         <text x={width - 56} y={height - 4} fill="var(--ink-3)" fontSize="10"
               fontFamily="JetBrains Mono, monospace" letterSpacing="0.1em">{labelRight}</text>

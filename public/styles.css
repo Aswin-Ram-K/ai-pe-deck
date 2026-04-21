@@ -361,18 +361,6 @@ html[data-density="sparse"] .supporting-strip {
   to   { opacity: 0.85; transform: scaleY(1.05); }
 }
 
-/* Live "head" dot on a sparkline — pulses at the right edge */
-.spark-head {
-  transform-origin: center;
-  animation: sparkHeadPulse 1400ms ease-in-out infinite;
-  animation-play-state: paused;
-}
-[data-deck-active] .spark-head { animation-play-state: running; }
-@keyframes sparkHeadPulse {
-  0%, 100% { transform: scale(1);   opacity: 0.7; }
-  50%      { transform: scale(1.6); opacity: 1; }
-}
-
 /* ─── Tile reveal flash (C3) ─────────────────────────────────────
  * Elements tagged `data-tile` get a one-shot accent-glow flash that
  * fires shortly after they pop in. Nothing after it — this is the
@@ -504,7 +492,6 @@ deck-stage > section[data-deck-active] {
 .deck-priming .donut-wrap,
 .deck-priming .pwm-scan,
 .deck-priming .rul-breathe,
-.deck-priming .spark-head,
 .deck-priming .glow-ring,
 .deck-priming [data-tile]::after {
   animation-play-state: paused !important;

@@ -1,6 +1,6 @@
 # AI in Power Electronics — Interactive Deck
 
-An animated, voice-controlled presentation built as a self-contained Node.js
+An animated paper-review presentation built as a self-contained Node.js
 app. Designed to run locally alongside your Claude CLI so you can iterate
 on the deck content through natural-language edits.
 
@@ -90,7 +90,7 @@ The app is split into files that are easy to prompt against:
 - **Content/narration** → `public/speaker-notes.json` (plain JSON array)
 - **Slide layouts** → `public/deck.jsx` (React components, no build step)
 - **Styles & theme** → `public/styles.css`
-- **Animations & voice** → `public/engine.js`
+- **Backdrop (aurora + flow field)** → `public/engine.js`
 
 Because the server serves these live (no bundler), edits take effect on
 refresh. Sample CLI prompts:
@@ -110,16 +110,13 @@ npm run export:notes-pdf   # writes exports/speaker-notes.pdf
 
 Both read live from `public/speaker-notes.json` so regenerate after edits.
 
-## Voice control
+## Navigation
 
-Click the mic button (bottom-right) or press **V** to toggle.
-
-- Uses the browser's built-in SpeechRecognition (Chrome/Edge work best).
-- Trigger phrases are extracted automatically from `speaker-notes.json`.
-- When the recognizer hears a target phrase, the current slide's next
-  reveal group animates in. After the last phrase on a slide, it auto-
-  advances to the next.
-- `space` or click anywhere is the manual fallback if voice misses a cue.
+Keyboard:
+- **←** / **→** · **PageUp** / **PageDown** · **Space** · advance / back
+- **Home** / **End** · first / last slide
+- **1-9** / **0** · jump to slide
+- **R** · reset to slide 1
 
 ## Ports & health
 
@@ -132,8 +129,7 @@ Click the mic button (bottom-right) or press **V** to toggle.
 The design is final; all further changes are operational. Common tweaks
 you can do through Claude CLI without understanding the code:
 
-- **Rewrite narration**: edit `speaker-notes.json` — voice triggers
-  re-extract automatically on the next page load.
+- **Rewrite narration**: edit `speaker-notes.json`; reload to pick up.
 - **Swap accent color**: the Tweaks panel stores `{accent}` in
   `deck.jsx`'s `TWEAK_DEFAULTS` block (EDITMODE-BEGIN/END markers).
   Change the hex in place; server serves it live.

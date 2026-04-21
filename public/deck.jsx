@@ -1363,8 +1363,11 @@ function SlideIntro() {
             uniforms.uBurst.value = (t - 6.45) / 0.25;
             pMat.uniforms.uCollapse.value = 0;
             phase = 'flashing';
-          } else if (t < 8.90) {
-            // Phase 6 — Ejecta expansion (2.2s, particle shader t>0 branch).
+          } else if (t < 7.80) {
+            // Phase 6a — Early ejecta (1.1s). Particles expand outward
+            // unaccompanied — pure explosion over black vacuum. Stops
+            // short so the aurora can materialise while the outer
+            // particles are still finishing their arc.
             uniforms.uBurst.value = 1.0;
             phase = 'ejecting';
           } else {
@@ -2992,7 +2995,7 @@ if (tweaksRoot) ReactDOM.createRoot(tweaksRoot).render(<TweaksHost />);
    * scheduled deck.next() at t=13800ms advances cleanly.
    * ─────────────────────────────────────────────────────────── */
   {
-    const INTRO_NEXT_DELAY_MS = 12600;  // mirrors remote-host.js INTRO_EXPLODE_TO_NEXT_MS
+    const INTRO_NEXT_DELAY_MS = 10800;  // mirrors remote-host.js INTRO_EXPLODE_TO_NEXT_MS
     const origGo = deck._go.bind(deck);
     let pendingGoTimeout = null;
 

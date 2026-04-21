@@ -1,50 +1,30 @@
 /* ═══════════════════════════════════════════════════════════════
  * Mobile remote client for the AI-PE deck.
  *
- * Flow:
- *   1. Parse room code from URL hash (`#room=ABCDEF`) or prompt.
- *   2. Connect to the deck's PeerJS host with id
- *      `ai-pe-deck-${roomCode}`.
- *   3. Send {action: 'next'|'prev'|'home'|'end'|'goto'} on button taps.
- *   4. Receive {type: 'state', index, total, label} and update UI.
+ * Static design — the peer ID is baked in (matches remote-host.js),
+ * so this page just auto-connects as soon as it loads. Bookmark the
+ * URL on your phone; no room code to type, no QR to scan.
  *
- * No dependencies beyond PeerJS — no build step, no framework.
+ * Flow:
+ *   1. Open bookmarked URL.
+ *   2. PeerJS loads, opens signaling socket, dials the deck's peer.
+ *   3. If deck is open → 'Connected', shows current slide.
+ *   4. If deck isn't open → 'Deck not open · retrying…', auto-retries
+ *      until the deck comes up.
  * ═══════════════════════════════════════════════════════════════ */
 
 (() => {
   const $ = (id) => document.getElementById(id);
 
-  /* ───────────────────── state + UI ───────────────────────────────
-   * Declared up front so functions further down can close over them
-   * without hitting a `let`-TDZ error when called during the
-   * bootstrapping step below. */
+  /* Must match PEER_ID in remote-host.js.
+   * This is how the two sides find each other on the PeerJS broker. */
+  const PEER_ID = 'ai-pe-deck-aswin-ram-k-ece563';
+
   let peer = null;
   let conn = null;
   let reconnectTimer = null;
 
-  /* ───────────────────── room code resolution ───────────────────── */
-
-  const hashParams = new URLSearchParams(location.hash.replace(/^#/, ''));
-  let ROOM = (hashParams.get('room') || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-
-  if (!ROOM) {
-    showPairModal();
-    $('pair-go').addEventListener('click', tryPairFromModal);
-    $('pair-input').addEventListener('keyup', (e) => { if (e.key === 'Enter') tryPairFromModal(); });
-  } else {
-    connect();
-  }
-
-  function tryPairFromModal() {
-    const v = $('pair-input').value.toUpperCase().replace(/[^A-Z0-9]/g, '');
-    if (v.length < 3) return;
-    ROOM = v;
-    location.hash = 'room=' + ROOM;
-    hidePairModal();
-    connect();
-  }
-  function showPairModal() { $('pair-modal').classList.remove('hidden'); }
-  function hidePairModal() { $('pair-modal').classList.add('hidden'); }
+  /* ───────────────────── UI helpers ─────────────────────────────── */
 
   function setStatus(text, connected) {
     $('status-text').textContent = text;
@@ -52,7 +32,7 @@
   }
 
   function setSlide(index, total, label) {
-    if (typeof index === 'number' && typeof total === 'number') {
+    if (typeof index === 'number' && typeof total === 'number' && index >= 0) {
       $('slide-num').innerHTML =
         `${String(index + 1).padStart(2, '0')}<span class="of"> / ${total}</span>`;
     }
@@ -62,25 +42,33 @@
   /* ───────────────────── peer setup ─────────────────────────────── */
 
   function connect() {
-    $('room-id').textContent = ROOM;
     if (!window.Peer) {
       setStatus('PeerJS failed to load', false);
       return;
     }
     setStatus('Connecting…', false);
-    // Random client-side ID (broker assigns if omitted).
+
+    // Random client-side ID (broker assigns it). We only care about
+    // connecting TO the deck's fixed ID; our own id doesn't matter.
     peer = new window.Peer(undefined, { debug: 1 });
-    peer.on('open', () => {
-      const hostId = 'ai-pe-deck-' + ROOM;
-      openConnection(hostId);
-    });
+
+    peer.on('open', () => openConnection(PEER_ID));
+
     peer.on('error', (err) => {
       console.warn('[remote] peer error', err && err.type, err);
-      setStatus('Connection error', false);
+      // "peer-unavailable" means the deck isn't registered with the
+      // broker yet (deck not open). We retry silently — normal state
+      // when you open the phone before opening the deck.
+      if (err && err.type === 'peer-unavailable') {
+        setStatus('Deck not open · retrying…', false);
+      } else {
+        setStatus('Connection error · retrying…', false);
+      }
       scheduleRetry();
     });
+
     peer.on('disconnected', () => {
-      setStatus('Disconnected · retrying…', false);
+      setStatus('Reconnecting…', false);
       scheduleRetry();
     });
   }
@@ -99,23 +87,25 @@
     });
     conn.on('data', (msg) => {
       if (!msg || typeof msg !== 'object') return;
-      if (msg.type === 'state') {
-        setSlide(msg.index, msg.total, msg.label);
-      }
+      if (msg.type === 'state') setSlide(msg.index, msg.total, msg.label);
     });
     conn.on('close', () => {
-      setStatus('Deck disconnected', false);
+      setStatus('Deck closed · retrying…', false);
       scheduleRetry();
     });
     conn.on('error', (err) => {
       console.warn('[remote] conn error', err);
-      setStatus('Connection error', false);
+      setStatus('Connection error · retrying…', false);
+      scheduleRetry();
     });
-    // Give the connection 6s to open. If it doesn't, assume deck isn't paired.
+
+    // 6s timeout — if the connection hasn't opened by then, the deck
+    // likely isn't up yet. Close and schedule a retry.
     setTimeout(() => {
       if (conn && !conn.open) {
-        setStatus('Deck not found · press C on deck', false);
-        conn.close();
+        setStatus('Deck not open · retrying…', false);
+        try { conn.close(); } catch (e) {}
+        scheduleRetry();
       }
     }, 6000);
   }
@@ -125,19 +115,19 @@
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
       if (peer && !peer.destroyed) {
+        // Signaling socket may be closed; reconnect restores it.
         try { peer.reconnect(); } catch (e) {}
-        if (ROOM) openConnection('ai-pe-deck-' + ROOM);
-      } else if (ROOM) {
+        openConnection(PEER_ID);
+      } else {
         connect();
       }
-    }, 2500);
+    }, 3000);
   }
 
   function send(msg) {
     if (conn && conn.open) {
       conn.send(msg);
-      // Haptic tap on iPhone (Safari) — not yet supported broadly
-      // but free when it is. Silently no-ops otherwise.
+      // Haptic tap on iPhone when Safari enables it (no-op today).
       if (navigator.vibrate) navigator.vibrate(12);
     }
   }
@@ -149,14 +139,13 @@
   $('btn-home').addEventListener('click', () => send({ action: 'home' }));
   $('btn-end').addEventListener('click', () => send({ action: 'end' }));
   $('btn-rescan').addEventListener('click', () => {
-    if (conn) { try { conn.close(); } catch {} }
-    if (peer) { try { peer.destroy(); } catch {} }
-    location.hash = '';
+    // Hard reset: tear down peer + reload. Useful if something's stuck.
+    if (conn) { try { conn.close(); } catch (e) {} }
+    if (peer) { try { peer.destroy(); } catch (e) {} }
     location.reload();
   });
 
-  // Swipe navigation — horizontal swipes on the main area advance.
-  // Prev / next on screen still work; swipe is a complement.
+  // Swipe navigation — horizontal swipes advance/back.
   let tx = 0, ty = 0;
   document.addEventListener('touchstart', (e) => {
     if (e.touches.length !== 1) return;
@@ -167,19 +156,21 @@
     if (!tx) return;
     const dx = e.changedTouches[0].clientX - tx;
     const dy = e.changedTouches[0].clientY - ty;
-    // Horizontal swipe, not vertical.
     if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
       send({ action: dx < 0 ? 'next' : 'prev' });
     }
     tx = 0; ty = 0;
   }, { passive: true });
 
-  // Volume buttons don't fire on mobile web, but these keyboard
-  // codes let you test from a Bluetooth keyboard or desktop.
+  // Bluetooth-keyboard / desktop-testing fallbacks.
   window.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowRight' || e.key === ' ') send({ action: 'next' });
     else if (e.key === 'ArrowLeft') send({ action: 'prev' });
     else if (e.key === 'Home') send({ action: 'home' });
     else if (e.key === 'End') send({ action: 'end' });
   });
+
+  /* ───────────────────── boot ───────────────────────────────────── */
+
+  connect();
 })();

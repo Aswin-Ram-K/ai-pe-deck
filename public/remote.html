@@ -78,11 +78,6 @@
     0%, 100% { opacity: 0.85; }
     50%      { opacity: 1; transform: scale(1.2); }
   }
-  #room-id {
-    color: var(--ink-2);
-    letter-spacing: 0.18em;
-  }
-
   /* Current slide panel */
   main {
     flex: 1;
@@ -168,65 +163,14 @@
     color: var(--ink);
   }
 
-  /* Error / pairing prompt */
-  #pair-modal {
-    position: fixed; inset: 0; z-index: 10;
-    display: flex; align-items: center; justify-content: center;
-    background: rgba(5,5,17,0.95);
-    backdrop-filter: blur(12px);
-  }
-  #pair-modal.hidden { display: none; }
-  #pair-modal .card {
-    max-width: 360px; padding: 32px;
-    text-align: center;
-  }
-  #pair-modal h1 {
-    font-family: 'Fraunces', Georgia, serif;
-    font-size: 32px; font-weight: 400;
-    margin: 0 0 14px;
-  }
-  #pair-modal p {
-    color: var(--ink-3); font-size: 14px;
-    line-height: 1.5; margin: 0 0 22px;
-  }
-  #pair-modal input {
-    appearance: none; border: none;
-    width: 100%; padding: 16px;
-    background: var(--bg-2);
-    border: 1px solid var(--rule);
-    border-radius: 10px;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 22px; font-weight: 500;
-    letter-spacing: 0.18em; text-align: center;
-    color: var(--ink);
-    text-transform: uppercase;
-  }
-  #pair-modal input:focus { outline: 2px solid var(--accent); border-color: transparent; }
-  #pair-modal button {
-    margin-top: 16px; width: 100%;
-    appearance: none; border: none;
-    padding: 16px; border-radius: 10px;
-    background: var(--accent);
-    color: #fff; font-weight: 600; font-size: 15px;
-    cursor: pointer;
-  }
 </style>
 </head>
 <body>
 
-<div id="pair-modal" class="hidden">
-  <div class="card">
-    <h1>Enter room code</h1>
-    <p>Open the deck on your laptop and press <b>C</b> to see the 6-character code.</p>
-    <input id="pair-input" type="text" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="ABCDEF" maxlength="6">
-    <button id="pair-go">Connect</button>
-  </div>
-</div>
-
 <header>
   <div class="status-row">
     <span><span id="status-dot"></span><span id="status-text">Connecting…</span></span>
-    <span>Room <span id="room-id">—</span></span>
+    <span>AI-PE · deck remote</span>
   </div>
 </header>
 

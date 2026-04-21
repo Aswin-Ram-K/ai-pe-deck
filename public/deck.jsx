@@ -954,6 +954,7 @@ function SlideIntro() {
         iTime:     { value: 0 },
         uCollapse: { value: 0 },
         uBurst:    { value: 0 },
+        uTension:  { value: 0 },  // 0=idle nebulous gas, 1=pre-implosion climax
         uPalette:  { value: paletteVec3 },
       };
 
@@ -978,6 +979,7 @@ function SlideIntro() {
           uniform float iTime;
           uniform float uCollapse;
           uniform float uBurst;
+          uniform float uTension;
           uniform vec3  uPalette[5];
           varying vec3 vPos;
           varying vec3 vNormal;
@@ -1045,9 +1047,13 @@ function SlideIntro() {
             vec3 rim = vec3(1.0, 0.76, 0.62) * fres * 0.65;
             color += rim;
 
-            // Subtle surface hotspot flicker
-            float flicker = fbm(vPos * 6.0 + iTime * 0.5) * 0.15 + 0.85;
+            // Subtle surface hotspot flicker (frequency scales with tension)
+            float flickerFreq = 0.5 + uTension * 3.0;
+            float flicker = fbm(vPos * 6.0 + iTime * flickerFreq) * 0.15 + 0.85;
             color *= flicker;
+
+            // Tension glow — color intensifies + warms as pressure builds
+            color += vec3(0.35, 0.18, 0.10) * uTension * uTension;
 
             // Collapse — colors lift toward white-hot; sphere brighter
             vec3 hotCore = vec3(1.0, 0.86, 0.72);
@@ -1086,16 +1092,31 @@ function SlideIntro() {
           uniform float iTime;
           uniform float uCollapse;
           uniform float uBurst;
+          uniform float uTension;
           uniform vec3  uPalette[5];
           varying vec3 vNormal;
           varying vec3 vWorldPos;
+          // Minimal noise for wispy atmosphere modulation
+          float hash1(float n) { return fract(sin(n) * 43758.5453); }
+          float noise1(vec3 p) {
+            vec3 i = floor(p), f = fract(p);
+            f = f*f*(3.0-2.0*f);
+            float n = i.x + i.y * 157.0 + 113.0 * i.z;
+            return mix(mix(mix(hash1(n + 0.0),   hash1(n + 1.0),   f.x),
+                           mix(hash1(n + 157.0), hash1(n + 158.0), f.x), f.y),
+                       mix(mix(hash1(n + 113.0), hash1(n + 114.0), f.x),
+                           mix(hash1(n + 270.0), hash1(n + 271.0), f.x), f.y), f.z);
+          }
           void main() {
             vec3 viewDir = normalize(cameraPosition - vWorldPos);
             float fres = pow(1.0 - abs(dot(vNormal, viewDir)), 1.8);
+            // Atmospheric wisp — noise-modulated alpha so corona reads
+            // as flowing gas, not a clean halo shell.
+            float wisp = 0.55 + 0.45 * noise1(vNormal * 3.0 + iTime * 0.25);
             // Corona hue drifts through plum/violet (warmer end of palette)
             float t = 0.5 + 0.5 * sin(iTime * 0.35);
-            vec3 tint = mix(uPalette[1], uPalette[2], t) * 1.2;
-            float a = fres * 0.55 * (1.0 - uBurst);  // corona vanishes at burst
+            vec3 tint = mix(uPalette[1], uPalette[2], t) * (1.2 + uTension * 0.4);
+            float a = fres * 0.55 * wisp * (1.0 - uBurst);
             gl_FragColor = vec4(tint, a);
           }
         `,
@@ -1153,17 +1174,32 @@ function SlideIntro() {
             float t = (uBurstTime < 0.0) ? -1.0 : (uTime - uBurstTime);
             vec3 pos;
             if (t < 0.0) {
-              pos = aDir * 0.5;    // resting on sphere surface (radius matches sphereGeom)
-              vAlpha = 0.0;
+              // Idle drift — particles orbit in the halo shell AROUND
+              // the sphere (radii 0.55 → 0.85), visible as atmospheric
+              // gas wrapping the plasma core. Deterministic per-particle
+              // offset via aSpeed so composition is stable across frames.
+              float seed = aSpeed * 7.13;
+              float driftPhase = uTime * 0.18 + seed;
+              float radialPhase = uTime * 0.12 + seed * 0.7;
+              float r = 0.55 + 0.30 * (0.5 + 0.5 * sin(radialPhase));
+              vec3 drift = vec3(
+                sin(driftPhase * 0.63 + seed * 1.9) * 0.08,
+                cos(driftPhase * 0.41 + seed * 3.1) * 0.08,
+                sin(driftPhase * 0.57 + seed * 2.3) * 0.08
+              );
+              pos = aDir * r + drift;
+              // Alpha pulses noticeably so the halo breathes — gas-cloud feel
+              vAlpha = 0.55 + 0.30 * sin(driftPhase * 0.5 + seed);
             } else {
-              // Expand outward from sphere surface; decelerate slightly as they fly
-              float dist = t * aSpeed * (1.0 - 0.3 * smoothstep(0.0, 1.1, t));
+              // Ejecta — radiate outward from sphere surface over 2.2s.
+              float dist = t * aSpeed * (1.0 - 0.3 * smoothstep(0.0, 2.2, t));
               pos = aDir * (0.5 + dist);
-              vAlpha = (1.0 - smoothstep(0.2, 1.1, t)) * smoothstep(0.0, 0.06, t);
+              vAlpha = (1.0 - smoothstep(0.2, 2.2, t)) * smoothstep(0.0, 0.06, t);
             }
             vec4 mv = modelViewMatrix * vec4(pos, 1.0);
             gl_Position = projectionMatrix * mv;
-            gl_PointSize = (3.5 + (1.0 - smoothstep(0.0, 1.1, t)) * 5.0) * uDPR;
+            float baseSize = (t < 0.0) ? 4.5 : (3.5 + (1.0 - smoothstep(0.0, 2.2, t)) * 5.0);
+            gl_PointSize = baseSize * uDPR;
           }
         `,
         fragmentShader: /* glsl */`
@@ -1191,15 +1227,27 @@ function SlideIntro() {
 
       const triggerExplode = () => {
         if (phase !== 'idle') return;  // idempotent
-        phase = 'collapsing';
+        phase = 'tensioning';
         burstAt = performance.now();
-        pMat.uniforms.uBurstTime.value = burstAt / 1000;
         // Add class to root so CSS tagline fade triggers
         slideEl.classList.add('intro-exploding');
+        // Note: uBurstTime is NOT set here — it's set when flash fires
+        // so particles stay in idle-drift mode through tension + implode.
       };
       window.addEventListener('deck-explode', triggerExplode);
 
       /* ─── Animation loop ─── */
+      /* Pacing windows (must match styles.css / remote-host.js constants):
+       *   t = 0.00 - 3.50s   tensioning  (slow breath, pulse ramp 0.5→2Hz)
+       *   t = 3.50 - 6.00s   intensify   (pulse ramp 2→18Hz, past threshold)
+       *   t = 6.00 - 6.55s   imploding   (scale 1.15 → 0.08, uCollapse 0→1)
+       *   t = 6.55 - 7.65s   held        (singularity, subtle tremor)
+       *   t = 7.65 - 7.90s   flashing    (white-out; particles released)
+       *   t = 7.90 - 10.10s  ejecting    (1500 points radiate outward)
+       *   t = 10.10 - 12.80s erupting    (aurora materializes via CSS)
+       *   t = 12.80 - 13.80s settled     (universe alive, pre-next hold)
+       *   t = 13.80+         next        (slidechange fires; first-slide enter)
+       * Total cosmic budget: 13.8s until deck.next(); +1.8s slow enter = 15.6s. */
       const clock = new THREE.Clock();
       let raf = 0;
       const tick = () => {
@@ -1207,44 +1255,74 @@ function SlideIntro() {
         uniforms.iTime.value = elapsed;
         pMat.uniforms.uTime.value = elapsed;
 
-        // Sphere rotation — slow Y-axis revolve, subtle X wobble
+        // Sphere revolve — slow Y-axis, subtle X wobble
         sphere.rotation.y  += 0.0018;
         sphere.rotation.x   = Math.sin(elapsed * 0.13) * 0.06;
         corona.rotation.y   = sphere.rotation.y * 0.6;
 
         if (phase !== 'idle') {
-          const t = (performance.now() - burstAt) / 1000;  // seconds since burst
-          // Pacing windows (must match styles.css / remote-host.js — see top comment)
-          if (t < 0.28) {
-            // Collapse
-            uniforms.uCollapse.value = t / 0.28;
-            const s = 1.0 - 0.45 * (t / 0.28);
+          const t = (performance.now() - burstAt) / 1000;
+
+          if (t < 3.5) {
+            // Phase 1 — Tensioning (wake + slow pulse)
+            const p = t / 3.5;
+            uniforms.uTension.value = p * 0.4;
+            const baseScale = 1.0 + 0.15 * p;
+            const pulseFreq = 0.5 + 1.5 * p;                     // 0.5 → 2Hz
+            const pulseAmp  = 0.02 + 0.06 * p;
+            const pulse = Math.sin(t * pulseFreq * Math.PI * 2) * pulseAmp;
+            sphere.scale.setScalar(baseScale + pulse);
+            corona.scale.setScalar(baseScale + pulse * 0.7);
+            phase = 'tensioning';
+          } else if (t < 6.0) {
+            // Phase 2 — Intensifying (pulse freq ramps past perceptual threshold)
+            const p = (t - 3.5) / 2.5;
+            uniforms.uTension.value = 0.4 + 0.6 * p;
+            const pulseFreq = 2.0 + 16.0 * p;                    // 2 → 18Hz
+            const pulseAmp  = 0.08 * (1.0 - p * 0.3);            // slight reduction for blur feel
+            const pulse = Math.sin(t * pulseFreq * Math.PI * 2) * pulseAmp;
+            sphere.scale.setScalar(1.15 + pulse);
+            corona.scale.setScalar(1.15 + pulse * 0.7);
+            phase = 'intensifying';
+          } else if (t < 6.55) {
+            // Phase 3 — Imploding
+            uniforms.uTension.value = 1.0;
+            const p = (t - 6.0) / 0.55;
+            uniforms.uCollapse.value = p;
+            const s = 1.15 - 1.07 * p;
             sphere.scale.setScalar(s);
-            corona.scale.setScalar(s);
-            phase = 'collapsing';
-          } else if (t < 0.45) {
-            // Flash
+            corona.scale.setScalar(s * 0.9);
+            phase = 'imploding';
+          } else if (t < 7.65) {
+            // Phase 4 — Held singularity (dramatic pause)
             uniforms.uCollapse.value = 1.0;
-            uniforms.uBurst.value = (t - 0.28) / 0.17;
+            const tremor = Math.sin(elapsed * 38) * 0.008;
+            sphere.scale.setScalar(0.08 + tremor);
+            corona.scale.setScalar(0.05);
+            phase = 'held';
+          } else if (t < 7.90) {
+            // Phase 5 — Flash (release particles)
+            if (pMat.uniforms.uBurstTime.value < 0) {
+              pMat.uniforms.uBurstTime.value = performance.now() / 1000;
+            }
+            sphere.scale.setScalar(0.08);
+            uniforms.uBurst.value = (t - 7.65) / 0.25;
             phase = 'flashing';
-          } else if (t < 1.55) {
-            // Ejecta expansion; sphere vanishes
+          } else if (t < 10.10) {
+            // Phase 6 — Ejecta expansion (sphere/corona vanish)
             uniforms.uBurst.value = 1.0;
-            const s = Math.max(0.0, 0.55 - (t - 0.45) * 2.0);
-            sphere.scale.setScalar(s);
-            corona.scale.setScalar(s);
+            sphere.visible = false;
+            corona.visible = false;
             phase = 'ejecting';
           } else {
-            // Dissipating — everything fades. Trigger universe emergence:
-            // aurora + flow-field fade in underneath while we wait for
-            // deck.next() at t=3.8s (fired by remote-host.js).
-            if (phase !== 'dissipating') {
-              sphere.visible = false;
-              corona.visible = false;
+            // Phase 7+ — Universe erupts. Aurora materializes via CSS
+            // keyframe on body.universe-erupting; breathing begins.
+            if (phase !== 'erupting') {
               document.body.classList.remove('intro-mode');
               document.body.classList.add('universe-settling');
+              document.body.classList.add('universe-erupting');
+              phase = 'erupting';
             }
-            phase = 'dissipating';
           }
         }
 
@@ -2692,19 +2770,19 @@ if (tweaksRoot) ReactDOM.createRoot(tweaksRoot).render(<TweaksHost />);
   }
 
   // Timings — must match longest duration in styles.css Scatterboard block.
-  const EXIT_DURATION  = 460;  // longest exit variant (slide-left)
-  const ENTER_DURATION = 560;  // longest enter variant (slide-right)
-  const EXIT_STAGGER   = 28;   // ms between exiting elements
-  const ENTER_STAGGER  = 34;   // ms between entering elements — slightly
-                               // larger than exit to make the scatter
-                               // feel more layered than the flush exit.
-  const ENTER_DELAY    = 320;  // ms after key press before new slide
-                               // visually activates (exit has ~70% done).
-  const PAINT_BUFFER   = 180;  // ms after activation, BEFORE entrance
-                               // animations start. Gives the browser time
-                               // to paint the new slide + an added visual
-                               // pause so the user registers the slide
-                               // change before content scatters in.
+  // All values 1.25× from original so inter-slide transitions feel 25%
+  // slower per presenter preference. Originals in comments.
+  const EXIT_DURATION  = 575;  // was 460 — longest exit variant (slide-left)
+  const ENTER_DURATION = 700;  // was 560 — longest enter variant (slide-right)
+  const EXIT_STAGGER   = 35;   // was 28  — ms between exiting elements
+  const ENTER_STAGGER  = 43;   // was 34  — ms between entering elements
+  const ENTER_DELAY    = 400;  // was 320 — ms after key press before new slide activates
+  const PAINT_BUFFER   = 225;  // was 180 — ms after activation, BEFORE entrance animations
+
+  // First-slide enter is a signature moment — unique opening after the cosmic
+  // intro. All enter variants run at 1800ms (overridden via
+  // body.first-slide-enter CSS class) to feel deliberately slower.
+  const FIRST_SLIDE_ENTER_MS = 1800;
 
   const restart = (slide) => {
     if (!slide) return;
@@ -2854,16 +2932,30 @@ if (tweaksRoot) ReactDOM.createRoot(tweaksRoot).render(<TweaksHost />);
     // CSS transitions the fade, so this is just a boolean flip per change.
     const isIntro = slide?.getAttribute('data-label') === 'Intro';
     document.body.classList.toggle('intro-mode', isIntro);
+    // Returning to intro (e.g., via R reset) — clear the eruption state
+    // classes so a fresh cosmic sequence can run cleanly next time.
+    if (isIntro) {
+      document.body.classList.remove('universe-erupting');
+      document.body.classList.remove('universe-settling');
+    }
 
-    // Leaving intro — trigger the star explosion regardless of source
-    // (phone START, arrow key, space, etc.). SlideIntro's triggerExplode
-    // is idempotent. Keyboard path is a fast-skip (slide 1 already active
-    // by now); the cinematic path comes from the phone START which calls
-    // deck.next() AFTER a 3.8s delay (remote-host.js), giving the shader
-    // state machine time to play before the scatterboard transition.
+    // Leaving intro — trigger the cosmic-intro state machine AND mark
+    // the first-slide signature enter (all scatterboard enter variants
+    // stretch to 1800ms for this one transition only). SlideIntro's
+    // triggerExplode is idempotent. Keyboard path is a fast-skip; the
+    // cinematic path comes from the phone START which calls deck.next()
+    // AFTER the INTRO_EXPLODE_TO_NEXT_MS delay (remote-host.js), giving
+    // the shader state machine time to play before scatterboard enter.
     const wasIntro = previousSlide?.getAttribute('data-label') === 'Intro';
     if (wasIntro && !sameSlide) {
       window.dispatchEvent(new CustomEvent('deck-explode'));
+      document.body.classList.add('first-slide-enter');
+      // Remove the class after the slow enter completes so subsequent
+      // transitions use the normal (25%-extended) timing. Buffer 300ms
+      // after the 1800ms enter for the .deck-arrived settle window.
+      setTimeout(() => {
+        document.body.classList.remove('first-slide-enter');
+      }, FIRST_SLIDE_ENTER_MS + 300);
     }
 
     // Actual slide→slide transition: exit old → HOLD → activate new

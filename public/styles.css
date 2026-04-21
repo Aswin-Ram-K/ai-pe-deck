@@ -429,14 +429,15 @@ deck-stage > section[data-deck-active] {
  * at the same instant — that's what sells the Scatterboard feel.
  * Stagger is assigned from JS as inline `animation-delay`. */
 
-/* EXITS */
-.deck-exit-fade-up    { animation: exitFadeUp 420ms cubic-bezier(.55,0,.3,1) forwards; }
-.deck-exit-scale      { animation: exitScale 380ms cubic-bezier(.5,0,.75,.3) forwards; }
-.deck-exit-slide-left { animation: exitSlideLeft 460ms cubic-bezier(.65,0,.3,1) forwards; }
-.deck-exit-slide-up   { animation: exitSlideUp 400ms cubic-bezier(.5,0,.3,1) forwards; }
-.deck-exit-slide-down { animation: exitSlideDown 400ms cubic-bezier(.5,0,.3,1) forwards; }
-.deck-exit-pop        { animation: exitPop 340ms cubic-bezier(.7,0,.3,.2) forwards; }
-.deck-exit-blur       { animation: exitBlur 440ms ease-out forwards; }
+/* EXITS — durations 1.25× from originals (420→525, 380→475, 460→575, 400→500, 340→425, 440→550)
+ * so inter-slide transitions feel 25% slower per presenter preference. Originals in comments. */
+.deck-exit-fade-up    { animation: exitFadeUp 525ms cubic-bezier(.55,0,.3,1) forwards; }   /* was 420ms */
+.deck-exit-scale      { animation: exitScale 475ms cubic-bezier(.5,0,.75,.3) forwards; }   /* was 380ms */
+.deck-exit-slide-left { animation: exitSlideLeft 575ms cubic-bezier(.65,0,.3,1) forwards; } /* was 460ms */
+.deck-exit-slide-up   { animation: exitSlideUp 500ms cubic-bezier(.5,0,.3,1) forwards; }    /* was 400ms */
+.deck-exit-slide-down { animation: exitSlideDown 500ms cubic-bezier(.5,0,.3,1) forwards; }  /* was 400ms */
+.deck-exit-pop        { animation: exitPop 425ms cubic-bezier(.7,0,.3,.2) forwards; }      /* was 340ms */
+.deck-exit-blur       { animation: exitBlur 550ms ease-out forwards; }                      /* was 440ms */
 
 @keyframes exitFadeUp    { to { opacity: 0; transform: translateY(-28px); } }
 @keyframes exitScale     { to { opacity: 0; transform: scale(0.92); } }
@@ -446,14 +447,23 @@ deck-stage > section[data-deck-active] {
 @keyframes exitPop       { to { opacity: 0; transform: scale(0.4); } }
 @keyframes exitBlur      { to { opacity: 0; filter: blur(8px); } }
 
-/* ENTERS — mirror-reversed */
-.deck-enter-fade-up     { animation: enterFadeUp 520ms cubic-bezier(.2,.7,.2,1) both; }
-.deck-enter-scale       { animation: enterScale 500ms cubic-bezier(.25,1.05,.3,1) both; }
-.deck-enter-slide-right { animation: enterSlideRight 560ms cubic-bezier(.2,.7,.2,1) both; }
-.deck-enter-slide-down  { animation: enterSlideDown 520ms cubic-bezier(.2,.7,.2,1) both; }
-.deck-enter-slide-up    { animation: enterSlideUp 520ms cubic-bezier(.2,.7,.2,1) both; }
-.deck-enter-pop         { animation: enterPop 520ms cubic-bezier(.2,1.35,.3,1) both; }
-.deck-enter-unblur      { animation: enterUnblur 520ms ease-out both; }
+/* ENTERS — mirror-reversed. Durations 1.25× from originals (520→650, 500→625, 560→700). */
+.deck-enter-fade-up     { animation: enterFadeUp 650ms cubic-bezier(.2,.7,.2,1) both; }       /* was 520ms */
+.deck-enter-scale       { animation: enterScale 625ms cubic-bezier(.25,1.05,.3,1) both; }     /* was 500ms */
+.deck-enter-slide-right { animation: enterSlideRight 700ms cubic-bezier(.2,.7,.2,1) both; }   /* was 560ms */
+.deck-enter-slide-down  { animation: enterSlideDown 650ms cubic-bezier(.2,.7,.2,1) both; }    /* was 520ms */
+.deck-enter-slide-up    { animation: enterSlideUp 650ms cubic-bezier(.2,.7,.2,1) both; }      /* was 520ms */
+.deck-enter-pop         { animation: enterPop 650ms cubic-bezier(.2,1.35,.3,1) both; }        /* was 520ms */
+.deck-enter-unblur      { animation: enterUnblur 650ms ease-out both; }                       /* was 520ms */
+
+/* FIRST-SLIDE signature enter — uniform 1800ms across all variants so the
+ * transition from the cosmic intro into Slide 1 feels slower + more deliberate
+ * than normal inter-slide changes. Applied via body.first-slide-enter class
+ * which is added when previousSlide.label === 'Intro' and removed after
+ * ENTER_DURATION + buffer by the slidechange handler in deck.jsx. */
+body.first-slide-enter deck-stage > section[data-deck-active] [class^="deck-enter-"] {
+  animation-duration: 1800ms !important;
+}
 
 @keyframes enterFadeUp     { from { opacity: 0; transform: translateY(28px); }  to { opacity: 1; transform: translateY(0); } }
 @keyframes enterScale      { from { opacity: 0; transform: scale(0.92); }       to { opacity: 1; transform: scale(1); } }
@@ -548,6 +558,29 @@ body.intro-mode #bg-flowfield {
 body:not(.intro-mode) .aurora-backdrop,
 body:not(.intro-mode) #bg-flowfield {
   transition: opacity 2800ms ease-in;
+}
+
+/* Universe erupts — when SlideIntro enters its `erupting` phase (t=10.1s),
+ * body gets `.universe-erupting`. Aurora materializes with force instead of
+ * a plain fade-in: over-saturated + over-bright at peak, then settles to
+ * rest. Keyframe runs once; underlying per-orb drift/breath animations keep
+ * running underneath because this animates the container, not the orbs. */
+body.universe-erupting .aurora-backdrop {
+  animation: auroraErupt 2700ms cubic-bezier(.25, .9, .25, 1) forwards;
+}
+@keyframes auroraErupt {
+  0%   { opacity: 0;    filter: saturate(2.6) brightness(1.9); }
+  18%  { opacity: 0.85; filter: saturate(2.0) brightness(1.5); }
+  40%  { opacity: 1.0;  filter: saturate(1.5) brightness(1.25); }
+  100% { opacity: 0.55; filter: saturate(1.0) brightness(1.0); }
+}
+body.universe-erupting #bg-flowfield {
+  animation: flowFieldErupt 2700ms ease-out forwards;
+}
+@keyframes flowFieldErupt {
+  0%   { opacity: 0; }
+  25%  { opacity: 0.9; }
+  100% { opacity: 1; }
 }
 
 /* Intro slide container — pure black, no aurora blend */

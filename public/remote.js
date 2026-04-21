@@ -24,7 +24,12 @@
 
   /* Bumps per deploy so iOS Safari can't serve cached assets after
    * we ship a fix. Seen as ?v=<stamp> on remote.js + speaker-script.json. */
-  const BUILD_VERSION = '20260421-breather-pause';
+  const BUILD_VERSION = '20260421-pause-timers';
+
+  /* Total presentation budget used by the "Total" countdown in the
+   * timer strip. Starts the moment the teleprompter lands on a
+   * real slide for the first time (first non-Intro state message). */
+  const TOTAL_PRESENTATION_MS = 17 * 60 * 1000;  // 17:00
 
   /* Teleprompter pacing knob. 1.0 = match the script's per-slide
    * time budgets exactly. >1 = slower scroll (teleprompter lingers);
@@ -73,6 +78,19 @@
     pxPerSec: 0,            // current scroll speed (derived from slide budget)
     scrollStartAtMs: 0,     // breather gate — accumulator won't advance before this wall-clock
     maxOffsetPx: 0,         // clamp — stop accumulator when currentOffsetPx reaches this
+    /* PAUSE state — two independent flags so hold-to-pause and
+     * button-pause compose naturally. ScrollTick stalls if either is true. */
+    manualPause: false,     // touch-and-hold on teleprompter
+    buttonPause: false,     // pause toggle button
+    /* TIMER state — totalElapsedMs + slideElapsedMs accumulate while
+     * not paused and the timer tick is running. slideBeepedOver
+     * latches after the first overtime alert so we don't spam beeps. */
+    totalElapsedMs: 0,
+    slideElapsedMs: 0,
+    slideDurationMs: 0,
+    slideBeepedOver: false,
+    lastTimerTickMs: 0,
+    timerIntervalId: null,
   };
 
   /* ───────────────────── UI helpers ─────────────────────────────── */
@@ -406,6 +424,12 @@
     // cancels the old rAF and starts a fresh one with new pxPerSec.
     snapToSlide(slideIndex);
     startScroll(slideIndex);
+
+    // Reset per-slide timer. Total timer keeps running across slides.
+    const slide = tele.script.slides.find(s => s.index === slideIndex);
+    const budget = (slide && typeof slide.timeBudgetSec === 'number')
+      ? slide.timeBudgetSec : null;
+    startTimers(budget);
   }
 
   function teleReset() {
@@ -413,8 +437,14 @@
     tele.started = false;
     tele.currentIdx = 0;
     tele.currentOffsetPx = 0;
-    document.body.classList.remove('tele-started');
+    tele.totalElapsedMs = 0;
+    tele.slideElapsedMs = 0;
+    tele.slideBeepedOver = false;
+    document.body.classList.remove('tele-started', 'slide-overtime', 'is-paused');
     stopScroll();
+    stopTimers();
+    $('total-timer-value').textContent = '—:—';
+    $('slide-timer-value').textContent = '—:—';
     const scroller = $('tele-scroller');
     if (scroller) {
       scroller.classList.add('smooth');
@@ -472,14 +502,24 @@
     tele.rafId = requestAnimationFrame(scrollTick);
   }
 
+  function isPaused() {
+    return tele.manualPause || tele.buttonPause;
+  }
+
   function scrollTick() {
     const scroller = $('tele-scroller');
     if (!scroller || !tele.started) return;
     scroller.classList.add('smooth');
     const now = performance.now();
 
-    // Breather phase — keep rAF alive but don't advance accumulator.
-    // Slide lastFrameMs forward so when we un-pause, dt isn't huge.
+    // PAUSE gate — hold lastFrameMs steady so dt after unpause is tiny.
+    if (isPaused()) {
+      tele.lastFrameMs = now;
+      tele.rafId = requestAnimationFrame(scrollTick);
+      return;
+    }
+
+    // BREATHER gate — 1 s hold at slide start.
     if (now < tele.scrollStartAtMs) {
       tele.lastFrameMs = now;
       tele.rafId = requestAnimationFrame(scrollTick);
@@ -501,8 +541,95 @@
 
     // Reached end of slide → stop the rAF. A new startScroll (triggered
     // by the next state message) will resume from the new slide's start.
+    // Timers keep running via their setInterval, independent of rAF.
     if (next >= tele.maxOffsetPx) return;
     tele.rafId = requestAnimationFrame(scrollTick);
+  }
+
+  /* ═══════════════════════════════════════════════════════════════
+   * TIMERS — total + per-slide countdown
+   *
+   * Two reasons this uses setInterval instead of piggy-backing on
+   * scrollTick's rAF:
+   *   (1) Timers must keep counting at end-of-slide when scroll has
+   *       stopped — so the overtime flash/beep triggers even while
+   *       the presenter is lingering past budget.
+   *   (2) 4 Hz updates are plenty for a "0:41"-resolution display,
+   *       and costs nothing compared to 60 Hz rAF.
+   * ═══════════════════════════════════════════════════════════════ */
+
+  function startTimers(slideDurationSec) {
+    tele.slideElapsedMs = 0;
+    tele.slideDurationMs = (typeof slideDurationSec === 'number') ? slideDurationSec * 1000 : 0;
+    tele.slideBeepedOver = false;
+    document.body.classList.remove('slide-overtime');
+    tele.lastTimerTickMs = performance.now();
+    if (tele.timerIntervalId == null) {
+      tele.timerIntervalId = setInterval(timerTick, 250);
+      // Render once immediately so the display doesn't show "—:—" briefly.
+      timerTick();
+    }
+  }
+
+  function stopTimers() {
+    if (tele.timerIntervalId != null) {
+      clearInterval(tele.timerIntervalId);
+      tele.timerIntervalId = null;
+    }
+  }
+
+  function timerTick() {
+    if (!tele.started) return;
+    const now = performance.now();
+    const dt = now - tele.lastTimerTickMs;
+    tele.lastTimerTickMs = now;
+    // Pause both timers when pause is active
+    if (!isPaused()) {
+      tele.totalElapsedMs += dt;
+      if (tele.slideDurationMs > 0) tele.slideElapsedMs += dt;
+    }
+    renderTimers();
+    // Overtime trigger — once per slide
+    if (tele.slideDurationMs > 0 && !tele.slideBeepedOver) {
+      if (tele.slideElapsedMs >= tele.slideDurationMs) {
+        tele.slideBeepedOver = true;
+        document.body.classList.add('slide-overtime');
+        playOvertimeBeep();
+      }
+    }
+  }
+
+  function renderTimers() {
+    const totalLeft = TOTAL_PRESENTATION_MS - tele.totalElapsedMs;
+    $('total-timer-value').textContent = formatMs(totalLeft);
+    if (tele.slideDurationMs > 0) {
+      const slideLeft = tele.slideDurationMs - tele.slideElapsedMs;
+      $('slide-timer-value').textContent = formatMs(slideLeft);
+    } else {
+      $('slide-timer-value').textContent = '—:—';
+    }
+  }
+
+  function formatMs(ms) {
+    const neg = ms < 0;
+    let s = Math.floor(Math.abs(ms) / 1000);
+    const m = Math.floor(s / 60);
+    s = s % 60;
+    const mm = String(m).padStart(1, '0');
+    const ss = String(s).padStart(2, '0');
+    return (neg ? '-' : '') + mm + ':' + ss;
+  }
+
+  function playOvertimeBeep() {
+    if (!audioCtx) {
+      // User hasn't tapped BIG BANG yet → no audio context. Silent
+      // alert (flash still fires). Acceptable because overtime can
+      // only happen after a slide has actually started, which means
+      // the audio ctx was created during countdown.
+      return;
+    }
+    // Higher + longer than countdown ticks so it's distinctive.
+    playTone(1100, 0.45);
   }
 
   function stopScroll() {
@@ -523,6 +650,40 @@
     if (conn) { try { conn.close(); } catch (e) {} }
     if (peer) { try { peer.destroy(); } catch (e) {} }
     location.reload();
+  });
+
+  /* ───────────────────── pause controls ─────────────────────────
+   * Two independent flags compose:
+   *   manualPause = touch-and-hold anywhere on the teleprompter
+   *   buttonPause = pause-button toggle state
+   * If EITHER is true, scrollTick + timerTick freeze.
+   * ─────────────────────────────────────────────────────────────── */
+
+  function syncPausedClass() {
+    document.body.classList.toggle('is-paused', tele.manualPause || tele.buttonPause);
+  }
+
+  // Touch-and-hold anywhere on the scrolling window pauses scroll.
+  const teleEl = $('teleprompter');
+  const onHoldStart = () => { tele.manualPause = true; syncPausedClass(); };
+  const onHoldEnd   = () => { tele.manualPause = false; syncPausedClass(); };
+  teleEl.addEventListener('touchstart', onHoldStart, { passive: true });
+  teleEl.addEventListener('touchend',   onHoldEnd,   { passive: true });
+  teleEl.addEventListener('touchcancel', onHoldEnd,  { passive: true });
+  // Desktop fallbacks for testing
+  teleEl.addEventListener('mousedown',  onHoldStart);
+  teleEl.addEventListener('mouseup',    onHoldEnd);
+  teleEl.addEventListener('mouseleave', onHoldEnd);
+
+  // Pause button for longer pauses — toggle.
+  $('btn-pause').addEventListener('click', (e) => {
+    // Block the click from bubbling to teleprompter / other handlers
+    e.stopPropagation();
+    tele.buttonPause = !tele.buttonPause;
+    syncPausedClass();
+    const btn = $('btn-pause');
+    btn.textContent = tele.buttonPause ? '▶' : '⏸';
+    btn.setAttribute('aria-pressed', String(tele.buttonPause));
   });
 
   /* ───────────────────── gestures ───────────────────────────────── */
@@ -588,9 +749,14 @@
       tele_currentOffsetPx: Number(tele.currentOffsetPx?.toFixed?.(1) ?? 0),
       tele_maxOffsetPx: Number(tele.maxOffsetPx?.toFixed?.(1) ?? 0),
       tele_pxPerSec: Number(tele.pxPerSec?.toFixed?.(2) ?? 0),
+      tele_manualPause: tele.manualPause,
+      tele_buttonPause: tele.buttonPause,
+      timer_totalLeft: formatMs(TOTAL_PRESENTATION_MS - tele.totalElapsedMs),
+      timer_slideLeft: tele.slideDurationMs > 0
+        ? formatMs(tele.slideDurationMs - tele.slideElapsedMs)
+        : '—:—',
+      timer_slideBeepedOver: tele.slideBeepedOver,
       tele_scriptSlides: tele.script?.slides?.length ?? null,
-      tele_slideOffsets: tele.slideOffsets,
-      tele_slideHeights: tele.slideHeights,
       countdown_active: countdown.active,
       viewport: window.innerWidth + 'x' + window.innerHeight,
     }, null, 2);

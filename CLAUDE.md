@@ -1,7 +1,7 @@
 # CLAUDE.md — `ai-pe-deck` (AI in Power Electronics)
 
-**Last refreshed:** 2026-04-21 (post-audio engineering session — cinematic big-bang bed + impact stack + 7.5s ms-display countdown)
-**Repo:** `github.com/Aswin-Ram-K/ai-pe-deck` · branch `main` · tracked HEAD `e065ac5`
+**Last refreshed:** 2026-04-21 (post-presentation — audio + countdown + network resilience trio shipped; talk delivered)
+**Repo:** `github.com/Aswin-Ram-K/ai-pe-deck` · branch `main` · tracked HEAD `614dccf`
 **Also read:** `PROJECT_CONTEXT.md` (design-decision log) · `SESSION_STATE.md` (session handoff + last-prompts packet) · `SPEAKER_SCRIPT.md` (canonical teleprompter source, Stark-edition) · `UNDERSTANDING_NOTES.md` (per-slide Q&A preparation) · `README.md` (user-facing run guide)
 
 ---
@@ -36,7 +36,17 @@ React+Babel load from CDN and `deck.jsx` is transpiled in-browser at boot.
 | ✅ Committed | **Countdown-to-flash sync** — phone fires `{action:'start'}` at T+3.55 s so count=0 "GO" coincides with the visual big-bang flash at +6.45 s into cosmic (not the cosmic *start*) |
 | ✅ Committed | **Deck-side cinematic audio** (classroom speakers): ambient bed (sub drone A1 + A3/E4/A4 pad with pulse-synced wobble LFO 0.8→18 Hz + decoupled dual-delay space reverb) + tension riser (noise 200→8000 Hz + saw 110→880 Hz) + A6 shimmer-bell anticipation + Tenet-style reverse swell (4500→300 Hz bandpass) + sidechain duck during held singularity + 5-layer broadband impact stack on the flash frame (sub kick / mid body / hi transient / FM tonal / roar). All procedural WebAudio, zero asset fetches. Gesture-unlock listener on deck window. |
 
-**Branch state:** clean, HEAD `e065ac5` pushed to `origin/main`. Pages deploys green (last ran on `e065ac5` push).
+**Branch state:** clean, HEAD `614dccf` pushed to `origin/main`. All Pages deploys green.
+
+## Network-resilience features (built 2026-04-21 live troubleshooting)
+
+Campus Wi-Fi blocked the PeerJS broker mid-setup, so three layered fallbacks shipped in rapid succession — retained permanently because any venue could re-trigger them:
+
+1. **TURN relay fallback** — both `Peer()` instances now pass `config.iceServers` with Google STUN + OpenRelay TURN (UDP/80, UDP/443, TCP/443). TCP/443 is the critical port for firewall traversal because it's indistinguishable from HTTPS.
+2. **Non-static peer ID history** — live PEER_ID is `ai-pe-deck-ece563-liveroom-2026a`. If you reuse this engine, bump the suffix every presentation — the PeerJS broker can hold ghost registrations 60+ s after disconnect, and stale IDs break the deck's re-registration on next boot.
+3. **Standalone mode (`?standalone=1`)** — phone runs teleprompter + 17:00 timer + countdown with zero deck connection. `send()` branches to a local slide-index handler. Presenter drives deck slides with laptop keyboard (Right Arrow = next) and manually syncs by tapping Next on phone. **This is the ultimate bail-out** — works on any network, including ones that fully block PeerJS.
+
+Launchpad URL remains `remote.html`; standalone variant is `remote.html?standalone=1`. Bookmark BOTH on the phone for future talks.
 
 ---
 

@@ -158,6 +158,29 @@ local JSON fetch of `speaker-notes.json`.
 - 2026-04-21 (afternoon): **Teleprompter session.** Shipped the full phone-remote teleprompter subsystem: Stark-edition script + syllable-paced 17 min distribution + accumulator scroll engine + breather + end-of-slide pause + hold-to-pause + pause button + scrub + independent timers + overtime red-flash + format legend + scrollable abbreviations + `UNDERSTANDING_NOTES.md` + cosmic-intro v5 orbital swirl + 10 s countdown. HEAD `d68e51b`. See §§ 6-10 below for decisions.
 - 2026-04-21 (evening): **Audio engineering session.** Deck-side cinematic audio subsystem for the BIG BANG intro. Shipped: procedural WebAudio ambient bed (sub drone + A3/E4/A4 pad with pulse-synced wobble LFO 0.8→18 Hz + decoupled dual-delay space reverb), countdown-to-flash sync (phone sends `{action:'start'}` at T+3.55s so count=0 aligns with visual big-bang), tension riser (noise+saw crescendo), reverse swell (Tenet-style negative attack), sidechain duck during held singularity, 5-layer broadband impact stack on flash frame (sub kick + mid body + hi transient + FM tonal + roar). Fixed cross-coupled-reverb whine bug (decoupled topology). HEAD `394e3cc`. See §§ 12-17 below for decisions.
 - 2026-04-21 (late evening): **Countdown + build-up tune.** Shortened countdown 10 → 7.5 s, swapped setInterval tick for rAF-driven `S.MMM` ms-precision display. Voice + beep pre-scheduled at each integer crossing so audio cues stay on wall-clock even if rAF is throttled. Boosted build-up layer peaks (radial pulse, riser noise+tone, reverse swell) while leaving bed + impact untouched — build-up now reads with more urgency, impact-vs-bed contrast intact. HEAD `e065ac5`.
+- 2026-04-21 (live, pre-presentation): **Network-resilience trio shipped under pressure.** Campus Wi-Fi broke the phone-remote / deck coupling. Three layered fallbacks landed in rapid succession: (a) TURN relay via OpenRelay on TCP/443 so WebRTC can traverse strict firewalls (commit `a7ceb3d`), (b) fresh PEER_ID `ai-pe-deck-ece563-liveroom-2026a` to bypass ghost broker registrations (commit `9b39457`), (c) standalone mode `?standalone=1` — phone runs teleprompter + timer with zero deck connection, presenter drives slides with laptop keyboard (commit `614dccf`). Standalone mode was the one that actually saved the talk. Talk delivered. Final HEAD `614dccf`. See §18 below for design decisions.
+
+---
+
+## Session-8 design decisions (live network-resilience trio, 2026-04-21 pre-presentation)
+
+### 18 · Three-layer network-resilience fallback for phone-remote ↔ deck
+
+**What was decided:** ship three independent fallbacks in one session, each solving a different failure mode, with progressively weaker assumptions about the room's network.
+
+| Layer | Assumption | When it saves you |
+|---|---|---|
+| **TURN relay** (Google STUN + OpenRelay TCP/443) | Room allows outbound HTTPS to public hosts | Client isolation on shared SSID; UDP blocked; strict NAT |
+| **Fresh PEER_ID per event** | PeerJS broker reachable from both ends | Stuck ghost registration from prior testing on same ID |
+| **Standalone mode `?standalone=1`** | Nothing about inter-device connectivity | Broker fully blocked; phone and laptop on different networks; WebRTC forbidden entirely |
+
+**Why all three instead of one:** they solve orthogonal problems. TURN fixes UDP / client-isolation at the ICE negotiation layer. Fresh PEER_ID fixes broker-level state collisions. Standalone mode eliminates the network dependency entirely. Layering them means the weakest-assumption fallback (standalone) is always a second tap away.
+
+**Standalone mode's key implementation insight:** the entire feature was ~45 lines because the existing architecture had a clean seam at `send()`. All UI, teleprompter, timer, and countdown code was already transport-independent — each just called `send(msg)` to push commands and reacted to `setSlide(index, total, label)` for state. Making those two functions mode-aware decoupled transport from everything else. This was the payoff of the original "state messages from deck → setSlide() → teleprompter reacts" design: one choke point for transport meant the fallback was small, surgical, and zero-risk to the happy path.
+
+**Alternative rejected:** "ship a completely different app for the backup." That would've duplicated code, risked behavior drift, and taken an hour to write. A URL-param toggle + two functions branching was the right-sized solution.
+
+**Lesson (permanent):** for any one-off event app with a two-device architecture, ship network fallbacks day one, not as a fire drill. Three-line addition on day one is a half-hour fire drill on presentation day.
 
 ---
 

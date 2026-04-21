@@ -1,9 +1,10 @@
 # SESSION_STATE.md — AI-PE Deck
 
-**Paused:** 2026-04-21 (evening session — cinematic big-bang audio + 7.5s countdown with ms display + boosted build-up)
+**Paused:** 2026-04-21 (post-presentation — cinematic big-bang audio + 7.5s ms-display countdown + network-resilience trio: TURN, fresh peer ID, standalone mode)
 **Branch:** `main` (clean — no uncommitted tracked files)
-**HEAD:** `e065ac5` feat(countdown): 7.5s countdown with ms display + boosted build-up audio
-**Main status:** pushed to `origin/main`; latest Pages deploy triggered by `e065ac5` (typically ~25 s to green).
+**HEAD:** `614dccf` feat(remote): standalone mode — teleprompter without deck connection
+**Main status:** pushed to `origin/main`; all Pages deploys green.
+**Presentation status:** delivered on 2026-04-21 with standalone-mode fallback in hand after campus Wi-Fi blocked PeerJS broker.
 
 ---
 
@@ -114,6 +115,27 @@ Workflow: `.github/workflows/pages.yml` → deploys `public/` on every push to `
 ### D19 — Softer, longer fade-in
 **Prompt:** "increase the fade-in period a little bit more. Three seconds seems a little too sharp for the loudness you are achieving, so reduce the maximum loudness and draw out the transition a little bit more."
 **Landed:** `AMBIENT_FADE_IN_SEC`: 3.0 → 5.5s. `AMBIENT_SUSTAIN_GAIN`: 0.26 → 0.16. Lower bed also leaves more headroom for the impact layers. Commit `394e3cc`.
+
+### D23 — TURN relay fallback for strict networks
+**Prompt:** "okay i'm on my university wifi and the whole remote system isnt wokring. check and fix it asap"
+**Landed:** Added matching `config.iceServers` to both `Peer()` instances (phone + deck): Google STUN (`stun.l.google.com:19302`, `stun1.l.google.com:19302`) + OpenRelay TURN (`openrelay.metered.ca` on UDP/80, UDP/443, and TCP/443). The TCP/443 variant is the critical one — looks like HTTPS, survives firewalls that drop non-standard ports or UDP. Must match on both sides: WebRTC only negotiates a TURN candidate pair if both peers advertise compatible servers. Commit `a7ceb3d`.
+
+### D24 — Fresh peer ID to bypass ghost broker registration
+**Prompt:** "still deck not open error"
+**Root cause hypothesis:** PeerJS broker held a ghost registration for the static PEER_ID `ai-pe-deck-aswin-ram-k-ece563` from earlier testing; deck peer couldn't register (`unavailable-id`), retry loop hit 60+ s.
+**Landed:** Changed PEER_ID to `ai-pe-deck-ece563-liveroom-2026a` in both `remote.js` and `remote-host.js`. Brand-new ID → broker has no prior state → instant registration on next attempt. Commit `9b39457`.
+
+### D25 — Standalone mode (the fallback that actually saved the day)
+**Prompt:** "disconnect the remote end for control so i can atleast use the teleprompter on its own"
+**Landed:** `?standalone=1` URL param. When set:
+- Skip peer connection entirely (no broker call, no deck coupling)
+- `send(msg)` branches to `handleLocalAction(msg)` which drives a local slide index counter instead of transmitting
+- BIG BANG countdown still runs normally (voice, ticks, ms display); at count=0 the "start" action advances local index to slide 1, triggering teleprompter + timer locally
+- All phone-side features work unchanged: pause, scrub, per-slide timer, overtime beep, pad wobble in countdown screen visuals if any
+- Status shows "Standalone · no deck"
+User drives deck slides independently with laptop keyboard (Right Arrow = next). Presenter manually syncs: tap Next on phone each time they advance on laptop. Commit `614dccf`.
+
+**Engineering insight:** the entire feature was a ~45-line addition because the existing architecture already had a clean seam at `send()`. All UI code, all teleprompter code, all timer code, all countdown code was already independent of transport — they just called `send(msg)` and `setSlide(index, total, label)`. Making those two functions mode-aware decoupled the transport from everything else. This is the payoff of the original "state messages from deck → setSlide() → teleprompter reacts" design — a single choke point meant the fallback was small, surgical, and zero-risk to the happy path.
 
 ### D21 — Shorter countdown with ms-precision display
 **Prompt:** "okay actually increase the max volume of the build up sound, and shorten the countdown to 7.5 secons and show milliseconds on the countdown"

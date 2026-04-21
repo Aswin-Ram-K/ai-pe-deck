@@ -24,12 +24,23 @@
 
   /* Bumps per deploy so iOS Safari can't serve cached assets after
    * we ship a fix. Seen as ?v=<stamp> on remote.js + speaker-script.json. */
-  const BUILD_VERSION = '20260421-accumulator-scroll';
+  const BUILD_VERSION = '20260421-breather-pause';
 
   /* Teleprompter pacing knob. 1.0 = match the script's per-slide
    * time budgets exactly. >1 = slower scroll (teleprompter lingers);
    * <1 = faster. Adjust after seeing it on device. */
   const TELE_SPEED_MULTIPLIER = 1.0;
+
+  /* Breather at the start of each slide — gives the presenter a
+   * beat to catch the first paragraph visually before the scroll
+   * accumulator starts advancing. Increase if they want more. */
+  const BREATHER_MS = 1000;
+
+  /* When the scroll accumulator reaches the *next* slide's offset
+   * minus this margin, we stop advancing — the current slide's
+   * content has fully scrolled through and we pause until the
+   * presenter taps Next. */
+  const END_OF_SLIDE_MARGIN_PX = 12;
 
   /* Debug overlay — enable by appending ?debug=1 to the URL. Shows
    * tele state (offsets, heights, started flag) on-device so you
@@ -60,6 +71,8 @@
     currentOffsetPx: 0,     // current scroll position (px from top of column)
     lastFrameMs: 0,         // wall clock of last scrollTick call
     pxPerSec: 0,            // current scroll speed (derived from slide budget)
+    scrollStartAtMs: 0,     // breather gate — accumulator won't advance before this wall-clock
+    maxOffsetPx: 0,         // clamp — stop accumulator when currentOffsetPx reaches this
   };
 
   /* ───────────────────── UI helpers ─────────────────────────────── */
@@ -431,9 +444,30 @@
     stopScroll();
     const slide = tele.script.slides.find(s => s.index === slideIndex);
     const budget = (slide && typeof slide.timeBudgetSec === 'number')
-      ? slide.timeBudgetSec : 75;
+      ? slide.timeBudgetSec : null;
+
+    if (budget === null) {
+      // Un-paced slide (e.g., Q&A). No auto-scroll; snap holds.
+      tele.pxPerSec = 0;
+      tele.maxOffsetPx = tele.currentOffsetPx;  // coherent phase reporting
+      return;
+    }
+
     const height = tele.slideHeights[slideIndex] || 400;
     tele.pxPerSec = height / (budget * TELE_SPEED_MULTIPLIER);
+
+    // Stop accumulator when we reach the TOP of the next slide (minus a
+    // small safety margin). For the last slide, fall back to this
+    // slide's full height — there's no successor offset to clamp against.
+    const thisOffset = tele.slideOffsets[slideIndex] ?? 0;
+    const nextOffset = tele.slideOffsets[slideIndex + 1];
+    tele.maxOffsetPx = (typeof nextOffset === 'number')
+      ? nextOffset - END_OF_SLIDE_MARGIN_PX
+      : thisOffset + height - END_OF_SLIDE_MARGIN_PX;
+
+    // 1-second breather so the presenter can visually catch the first
+    // paragraph before the accumulator starts advancing.
+    tele.scrollStartAtMs = performance.now() + BREATHER_MS;
     tele.lastFrameMs = performance.now();
     tele.rafId = requestAnimationFrame(scrollTick);
   }
@@ -443,12 +477,31 @@
     if (!scroller || !tele.started) return;
     scroller.classList.add('smooth');
     const now = performance.now();
-    // Cap dt at 100ms — if the tab was backgrounded, rAF pauses, and
-    // a huge dt would cause a visible scroll-leap on resume.
+
+    // Breather phase — keep rAF alive but don't advance accumulator.
+    // Slide lastFrameMs forward so when we un-pause, dt isn't huge.
+    if (now < tele.scrollStartAtMs) {
+      tele.lastFrameMs = now;
+      tele.rafId = requestAnimationFrame(scrollTick);
+      return;
+    }
+
+    // Cap dt at 100 ms — backgrounded-tab rAF pauses would otherwise
+    // cause a visible scroll-leap on resume.
     const dt = Math.min((now - tele.lastFrameMs) / 1000, 0.1);
     tele.lastFrameMs = now;
-    tele.currentOffsetPx += dt * tele.pxPerSec;
-    scroller.style.transform = `translateY(-${tele.currentOffsetPx}px)`;
+
+    // Advance, but clamp at the end-of-slide max.
+    const next = Math.min(
+      tele.currentOffsetPx + dt * tele.pxPerSec,
+      tele.maxOffsetPx
+    );
+    tele.currentOffsetPx = next;
+    scroller.style.transform = `translateY(-${next}px)`;
+
+    // Reached end of slide → stop the rAF. A new startScroll (triggered
+    // by the next state message) will resume from the new slide's start.
+    if (next >= tele.maxOffsetPx) return;
     tele.rafId = requestAnimationFrame(scrollTick);
   }
 
@@ -520,14 +573,22 @@
   function updateDebugPanel() {
     const el = $('debug-content');
     if (!el) return;
+    const now = performance.now();
+    let phase;
+    if (!tele.started) phase = 'idle';
+    else if (now < tele.scrollStartAtMs) phase = 'breathing';
+    else if (tele.currentOffsetPx >= tele.maxOffsetPx) phase = 'end-reached (paused)';
+    else phase = 'scrolling';
+
     el.textContent = JSON.stringify({
       build: BUILD_VERSION,
       bodyClasses: document.body.className,
-      tele_scriptSlides: tele.script?.slides?.length ?? null,
-      tele_started: tele.started,
+      tele_phase: phase,
       tele_currentIdx: tele.currentIdx,
       tele_currentOffsetPx: Number(tele.currentOffsetPx?.toFixed?.(1) ?? 0),
+      tele_maxOffsetPx: Number(tele.maxOffsetPx?.toFixed?.(1) ?? 0),
       tele_pxPerSec: Number(tele.pxPerSec?.toFixed?.(2) ?? 0),
+      tele_scriptSlides: tele.script?.slides?.length ?? null,
       tele_slideOffsets: tele.slideOffsets,
       tele_slideHeights: tele.slideHeights,
       countdown_active: countdown.active,

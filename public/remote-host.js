@@ -639,7 +639,32 @@ const AMBIENT_RELEASE_DURATION_SEC = 1.8;
         return;
       }
     }
-    peer = new window.Peer(PEER_ID, { debug: 1 });
+    /* ICE servers — see remote.js for rationale. Must match on both
+     * sides or the relay candidate won't negotiate. */
+    peer = new window.Peer(PEER_ID, {
+      debug: 1,
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          {
+            urls: 'turn:openrelay.metered.ca:80',
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
+          },
+          {
+            urls: 'turn:openrelay.metered.ca:443',
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
+          },
+          {
+            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
+          },
+        ],
+      },
+    });
 
     peer.on('open', (id) => {
       peerReady = true;

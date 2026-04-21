@@ -24,7 +24,7 @@
 
   /* Bumps per deploy so iOS Safari can't serve cached assets after
    * we ship a fix. Seen as ?v=<stamp> on remote.js + speaker-script.json. */
-  const BUILD_VERSION = '20260421-75s-boosted';
+  const BUILD_VERSION = '20260421-turn-fallback';
 
   /* Total presentation budget used by the "Total" countdown in the
    * timer strip. Starts the moment the teleprompter lands on a
@@ -151,7 +151,35 @@
     if (!window.Peer) { setStatus('PeerJS failed to load', false); return; }
     setStatus('Connecting…', false);
 
-    peer = new window.Peer(undefined, { debug: 1 });
+    /* ICE servers — Google STUN for baseline NAT traversal + OpenRelay
+     * TURN (free public relay by Metered) on 443/TCP so the relay path
+     * survives strict university / enterprise firewalls that drop UDP
+     * or block non-standard ports. Without TURN, networks with client
+     * isolation on the same SSID (phones can't see laptops) fail. */
+    peer = new window.Peer(undefined, {
+      debug: 1,
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          {
+            urls: 'turn:openrelay.metered.ca:80',
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
+          },
+          {
+            urls: 'turn:openrelay.metered.ca:443',
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
+          },
+          {
+            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
+          },
+        ],
+      },
+    });
 
     peer.on('open', () => openConnection(PEER_ID));
     peer.on('error', (err) => {

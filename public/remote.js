@@ -24,7 +24,7 @@
 
   /* Bumps per deploy so iOS Safari can't serve cached assets after
    * we ship a fix. Seen as ?v=<stamp> on remote.js + speaker-script.json. */
-  const BUILD_VERSION = '20260421-bigbang-cinema';
+  const BUILD_VERSION = '20260421-75s-boosted';
 
   /* Total presentation budget used by the "Total" countdown in the
    * timer strip. Starts the moment the teleprompter lands on a
@@ -52,8 +52,10 @@
    * can verify without a Mac-tethered DevTools session. */
   const DEBUG = new URLSearchParams(location.search).get('debug') === '1';
 
-  /* Countdown length in seconds before the cosmic intro fires. */
-  const COUNTDOWN_SEC = 10;
+  /* Countdown length in seconds before the cosmic intro fires.
+   * Fractional values are supported (e.g., 7.5). Display is driven
+   * by requestAnimationFrame so the ms readout stays smooth. */
+  const COUNTDOWN_SEC = 7.5;
 
   let peer = null;
   let conn = null;
@@ -61,8 +63,11 @@
 
   const countdown = {
     active: false,
-    intervalId: null,
-    explodeTimerId: null,   // fires send({action:'start'}) 3.55s in, so flash at count=0
+    rafId: null,            // animation frame for ms-accurate display
+    startAtMs: 0,           // performance.now() when enterCountdown fired
+    voiceTimerIds: [],      // pre-scheduled voice + beep events (one per integer)
+    explodeTimerId: null,   // fires send({action:'start'}) so flash aligns with count=0
+    lastIntegerShown: null, // triggers pulse animation on integer-crossings
   };
   let audioCtx = null;
 
@@ -198,15 +203,20 @@
   }
 
   /* ═══════════════════════════════════════════════════════════════
-   * STATE C — Countdown with voice + tone
+   * STATE C — Countdown with ms display + voice + tone
    *
    * On BIG BANG tap:
    *   1. Unlock audio (AudioContext.resume + queue first utterance
    *      inside the tap handler — iOS requires both).
-   *   2. Show overlay, tick from COUNTDOWN_SEC → 1 with voice + beep.
-   *   3. At t=0, say "go", play a higher final tone, send
-   *      {action:'start'} to deck. Remain in C until deck state
-   *      reports label !== 'Intro'.
+   *   2. rAF loop renders "S.MMM" remaining (e.g., "7.482") every
+   *      frame for smooth ms-precision display.
+   *   3. Voice + 440 Hz tick pre-scheduled at each integer crossing
+   *      ("seven" at t=500ms when display reads 7.000, "six" at
+   *      t=1500ms, …, "one" at t=6500ms, "go" at t=7500ms).
+   *   4. send({action:'start'}) fires at T + (COUNTDOWN_SEC*1000 -
+   *      VISUAL_FLASH_OFFSET_MS), so count=0 coincides with the
+   *      visual big-bang flash on the deck.
+   *   5. State C exits when deck state message reports non-Intro.
    * ═══════════════════════════════════════════════════════════════ */
 
   function enterCountdown() {
@@ -216,56 +226,89 @@
 
     unlockAudio();
 
-    /* Fire the deck's cosmic intro early so the +6.45s visual flash
-     * coincides with count=0 ("GO"). With COUNTDOWN_SEC=10, this is
-     * T+3.55s. Phone keeps ticking 10→0 at 1Hz — the cosmic visual
-     * tensioning+intensifying plays under the last ~6.5s of counts. */
-    const explodeDelayMs = (COUNTDOWN_SEC * 1000) - VISUAL_FLASH_OFFSET_MS;
+    const totalMs = COUNTDOWN_SEC * 1000;
+    countdown.startAtMs = performance.now();
+    countdown.lastIntegerShown = null;
+
+    // Fire the explode so the deck's +6.45s flash aligns with count=0.
+    const explodeDelayMs = totalMs - VISUAL_FLASH_OFFSET_MS;
     countdown.explodeTimerId = setTimeout(() => {
       countdown.explodeTimerId = null;
       send({ action: 'start' });
     }, Math.max(0, explodeDelayMs));
 
-    let n = COUNTDOWN_SEC;
-    showCountdownNum(n);
-    speakAndBeep(n);
-
-    countdown.intervalId = setInterval(() => {
-      n -= 1;
-      if (n > 0) {
-        showCountdownNum(n);
+    // Pre-schedule voice + beep per integer crossing. "seven" fires
+    // when the display first crosses 7.000 (at t=500ms for 7.5s total).
+    const startInt = Math.floor(COUNTDOWN_SEC);
+    for (let n = startInt; n >= 1; n--) {
+      const ms = (COUNTDOWN_SEC - n) * 1000;
+      const id = setTimeout(() => {
         speakAndBeep(n);
+        pulseCountdownDisplay();
+      }, ms);
+      countdown.voiceTimerIds.push(id);
+    }
+    // "go" at t=totalMs
+    countdown.voiceTimerIds.push(setTimeout(() => {
+      speakAndBeep(0);
+      pulseCountdownDisplay();
+    }, totalMs));
+
+    // rAF-driven ms display
+    const tick = () => {
+      if (!countdown.active) return;
+      const elapsed = performance.now() - countdown.startAtMs;
+      const remaining = Math.max(0, totalMs - elapsed);
+      renderCountdownDisplay(remaining);
+      if (remaining > 0) {
+        countdown.rafId = requestAnimationFrame(tick);
       } else {
-        // t = 0 — visual flash lands here; announce GO (explode already fired)
-        clearInterval(countdown.intervalId);
-        countdown.intervalId = null;
-        showCountdownNum(0);
-        speakAndBeep(0);
-        // Stay in C. Exit when state message arrives with non-Intro label.
+        countdown.rafId = null;
       }
-    }, 1000);
+    };
+    countdown.rafId = requestAnimationFrame(tick);
   }
 
   function exitCountdown() {
     if (!countdown.active) return;
     countdown.active = false;
-    if (countdown.intervalId)    { clearInterval(countdown.intervalId);  countdown.intervalId = null; }
+    if (countdown.rafId)         { cancelAnimationFrame(countdown.rafId); countdown.rafId = null; }
     if (countdown.explodeTimerId) { clearTimeout(countdown.explodeTimerId); countdown.explodeTimerId = null; }
+    countdown.voiceTimerIds.forEach((id) => clearTimeout(id));
+    countdown.voiceTimerIds = [];
+    countdown.lastIntegerShown = null;
     document.body.classList.remove('counting-down');
   }
 
-  function showCountdownNum(n) {
+  /* Render the ms-precision display. Triggers pulse animation on
+   * integer-crossings (same visual beat as the voice ticks). */
+  function renderCountdownDisplay(remainingMs) {
     const el = $('countdown-num');
-    // force restart of the pulse animation
-    el.classList.remove('is-go');
-    void el.offsetWidth;
-    if (n === 0) {
-      el.textContent = 'GO';
-      el.classList.add('is-go');
-    } else {
-      el.textContent = String(n);
+    if (!el) return;
+    if (remainingMs <= 0) {
+      if (!el.classList.contains('is-go')) {
+        el.classList.add('is-go');
+        el.textContent = 'GO';
+      }
+      return;
     }
-    // Retrigger pulse
+    el.classList.remove('is-go');
+    const seconds = Math.floor(remainingMs / 1000);
+    const ms = Math.floor(remainingMs % 1000);
+    el.textContent = seconds + '.' + String(ms).padStart(3, '0');
+
+    // Pulse animation on integer-crossing (e.g., when display first
+    // reads 6.xxx after reading 7.xxx). Matches the voice tick beat.
+    const currentInteger = Math.ceil(remainingMs / 1000);
+    if (countdown.lastIntegerShown !== null && currentInteger < countdown.lastIntegerShown) {
+      pulseCountdownDisplay();
+    }
+    countdown.lastIntegerShown = currentInteger;
+  }
+
+  function pulseCountdownDisplay() {
+    const el = $('countdown-num');
+    if (!el) return;
     el.style.animation = 'none';
     void el.offsetWidth;
     el.style.animation = '';

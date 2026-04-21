@@ -264,8 +264,8 @@ const AMBIENT_RELEASE_DURATION_SEC = 1.8;
 
     const env = ctx.createGain();
     env.gain.setValueAtTime(0.0001, t0);
-    env.gain.exponentialRampToValueAtTime(0.25, t0 + 2.0);
-    env.gain.exponentialRampToValueAtTime(0.34, t0 + 6.2);
+    env.gain.exponentialRampToValueAtTime(0.34, t0 + 2.0);
+    env.gain.exponentialRampToValueAtTime(0.50, t0 + 6.2);    // build-up boosted
     env.gain.exponentialRampToValueAtTime(0.0001, t0 + 6.7);  // cut after impact
 
     carrier.connect(vca); vca.connect(env); env.connect(cosmicAmbient.dryBus);
@@ -296,7 +296,7 @@ const AMBIENT_RELEASE_DURATION_SEC = 1.8;
     nBP.frequency.exponentialRampToValueAtTime(8000, tPeak);
     const nGain = ctx.createGain();
     nGain.gain.setValueAtTime(0.0001, tStart);
-    nGain.gain.exponentialRampToValueAtTime(0.22, tPeak - 0.05);
+    nGain.gain.exponentialRampToValueAtTime(0.42, tPeak - 0.05);  // build-up boosted
     nGain.gain.exponentialRampToValueAtTime(0.0001, tPeak + 0.03);
     const nWet = ctx.createGain(); nWet.gain.value = 0.55;
     nSrc.connect(nBP); nBP.connect(nGain);
@@ -314,7 +314,7 @@ const AMBIENT_RELEASE_DURATION_SEC = 1.8;
     tFilt.frequency.exponentialRampToValueAtTime(6000, tPeak);
     const tGain = ctx.createGain();
     tGain.gain.setValueAtTime(0.0001, tStart);
-    tGain.gain.exponentialRampToValueAtTime(0.11, tPeak - 0.05);
+    tGain.gain.exponentialRampToValueAtTime(0.22, tPeak - 0.05);  // build-up boosted
     tGain.gain.exponentialRampToValueAtTime(0.0001, tPeak + 0.02);
     tOsc.connect(tFilt); tFilt.connect(tGain); tGain.connect(cosmicAmbient.dryBus);
     tOsc.start(tStart); tOsc.stop(tPeak + 0.05);
@@ -368,7 +368,7 @@ const AMBIENT_RELEASE_DURATION_SEC = 1.8;
     bp.frequency.exponentialRampToValueAtTime(300, tImpact);
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, tStart);
-    g.gain.exponentialRampToValueAtTime(0.32, tImpact - 0.01);
+    g.gain.exponentialRampToValueAtTime(0.44, tImpact - 0.01);    // build-up boosted
     const wet = ctx.createGain(); wet.gain.value = 0.8;
     src.connect(bp); bp.connect(g);
     g.connect(cosmicAmbient.dryBus);

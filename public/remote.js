@@ -22,10 +22,19 @@
 
   const PEER_ID = 'ai-pe-deck-aswin-ram-k-ece563';
 
+  /* Bumps per deploy so iOS Safari can't serve cached assets after
+   * we ship a fix. Seen as ?v=<stamp> on remote.js + speaker-script.json. */
+  const BUILD_VERSION = '20260421-teleprompter-fix';
+
   /* Teleprompter pacing knob. 1.0 = match the script's per-slide
    * time budgets exactly. >1 = slower scroll (teleprompter lingers);
    * <1 = faster. Adjust after seeing it on device. */
   const TELE_SPEED_MULTIPLIER = 1.0;
+
+  /* Debug overlay — enable by appending ?debug=1 to the URL. Shows
+   * tele state (offsets, heights, started flag) on-device so you
+   * can verify without a Mac-tethered DevTools session. */
+  const DEBUG = new URLSearchParams(location.search).get('debug') === '1';
 
   /* Countdown length in seconds. 5 per spec. */
   const COUNTDOWN_SEC = 5;
@@ -268,7 +277,9 @@
 
   async function loadScript() {
     try {
-      const resp = await fetch('speaker-script.json', { cache: 'no-cache' });
+      // Cache-bust so iOS Safari can't serve a stale JSON after we
+      // ship new script content. Version stamp bumps per build.
+      const resp = await fetch('speaker-script.json?v=' + BUILD_VERSION, { cache: 'no-cache' });
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
       tele.script = await resp.json();
     } catch (e) {
@@ -276,9 +287,12 @@
       tele.script = { slides: [] };
     }
     renderScript();
-    // Wait for fonts + layout before measuring
     if (document.fonts && document.fonts.ready) await document.fonts.ready;
-    requestAnimationFrame(() => requestAnimationFrame(measureOffsets));
+    // NOTE: we do NOT measure offsets here. On fresh phone load
+    // body.on-intro is true, which makes #controls-surface display:none,
+    // and every descendant has offsetTop/offsetHeight === 0. Instead,
+    // ensureMeasured() runs lazily in teleOnSlideChange the first time
+    // State B becomes visible (non-Intro state message arrives).
   }
 
   function renderScript() {
@@ -330,18 +344,38 @@
     });
   }
 
+  /* Returns true if the scroller is currently laid out (State B is
+   * visible). Used as the gate for measureOffsets — measuring while
+   * the ancestor is display:none gives zeros for everything. */
+  function ensureMeasured() {
+    const scroller = $('tele-scroller');
+    if (!scroller) return false;
+    const s1 = scroller.querySelector('section[data-slide="1"]');
+    if (!s1 || s1.offsetHeight === 0) return false;
+    measureOffsets();
+    return tele.slideHeights[1] > 0;
+  }
+
   function teleOnSlideChange(slideIndex) {
-    // offsetTop of slide 1 is 0 (topmost section), so check for
-    // undefined rather than falsy — !0 would early-return and the
-    // teleprompter would never un-hide its "Waiting for slide 1" veil.
-    if (!tele.script || tele.slideOffsets[slideIndex] === undefined) return;
+    if (!tele.script) return;
+
+    // Lazy measurement: on fresh phone load, State B is hidden and
+    // any earlier measurement would have captured offsetTop=0 and
+    // offsetHeight=0 for every section. The FIRST time we're called
+    // after State B becomes visible, we need to re-measure.
+    if (!ensureMeasured()) {
+      // Layout hasn't settled after display:none→flex yet. Retry on
+      // the next frame — and once more if still not ready.
+      requestAnimationFrame(() => {
+        if (ensureMeasured()) return teleOnSlideChange(slideIndex);
+        requestAnimationFrame(() => {
+          if (ensureMeasured()) teleOnSlideChange(slideIndex);
+        });
+      });
+      return;
+    }
 
     if (!tele.started) {
-      // Start teleprompter on first non-Intro landing. The expected
-      // flow is slide 1 (countdown → cosmic intro → slide 1 enters),
-      // but if the remote reloads mid-presentation the deck may
-      // report a later slide — start there rather than leaving the
-      // presenter stuck on "Waiting for slide 1…".
       tele.started = true;
       document.body.classList.add('tele-started');
     }
@@ -465,6 +499,31 @@
       startScroll(tele.currentIdx);
     }
   });
+
+  /* ───────────────────── debug overlay ─────────────────────────── */
+
+  function updateDebugPanel() {
+    const el = $('debug-content');
+    if (!el) return;
+    el.textContent = JSON.stringify({
+      build: BUILD_VERSION,
+      bodyClasses: document.body.className,
+      tele_scriptSlides: tele.script?.slides?.length ?? null,
+      tele_started: tele.started,
+      tele_currentIdx: tele.currentIdx,
+      tele_baselineOffsetPx: tele.baselineOffsetPx,
+      tele_pxPerSec: Number(tele.pxPerSec?.toFixed?.(2) ?? 0),
+      tele_slideOffsets: tele.slideOffsets,
+      tele_slideHeights: tele.slideHeights,
+      countdown_active: countdown.active,
+      viewport: window.innerWidth + 'x' + window.innerHeight,
+    }, null, 2);
+  }
+
+  if (DEBUG) {
+    document.body.classList.add('debug-on');
+    setInterval(updateDebugPanel, 400);
+  }
 
   /* ───────────────────── boot ───────────────────────────────────── */
 

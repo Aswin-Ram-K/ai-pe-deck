@@ -27,6 +27,11 @@
   html, body {
     margin: 0; padding: 0;
     height: 100%;
+    /* svh = "small viewport height" — locked to the viewport as if
+     * the URL bar is visible. Using this instead of vh prevents the
+     * Next button from being pushed off-screen when iOS Safari's
+     * URL bar appears. */
+    height: 100svh;
     background: var(--bg);
     color: var(--ink);
     font-family: 'Inter Tight', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -344,13 +349,41 @@
   }
   body.tele-started #tele-pre-start { display: none; }
 
-  /* Bottom 1/4 — huge Next button, edge-to-edge */
+  /* ═══════════════════════════════════════════════════════════════
+   * DEBUG PANEL — enable with ?debug=1 on the URL. Renders a live
+   * dump of tele/countdown internal state so you can verify the
+   * teleprompter's measurement and scroll engine on-device without
+   * a Mac-tethered DevTools session.
+   * ═══════════════════════════════════════════════════════════════ */
+  #debug-panel {
+    position: fixed;
+    top: 12px; left: 12px; right: 12px;
+    z-index: 200;
+    max-height: 45vh;
+    overflow: auto;
+    display: none;
+    padding: 10px 12px;
+    background: rgba(0, 0, 0, 0.88);
+    border: 1px solid rgba(0, 255, 170, 0.35);
+    border-radius: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    line-height: 1.4;
+    color: #6eebcd;
+    pointer-events: none;
+    white-space: pre-wrap;
+  }
+  body.debug-on #debug-panel { display: block; }
+
+  /* Bottom 1/4 — huge Next button, edge-to-edge. 23svh (vs 25vh)
+   * gives ~2% under-fit headroom so the button + tele column can't
+   * overflow when iOS Safari's URL bar toggles into view. */
   #btn-next {
     appearance: none;
     flex: 0 0 auto;
     width: 100%;
-    height: 25vh;
-    min-height: 180px;
+    height: 23svh;
+    min-height: 172px;
     padding: 0;
     border: none;
     border-radius: 0;
@@ -413,10 +446,14 @@
   <button id="btn-next">Next&nbsp;&nbsp;▶</button>
 </div>
 
+<!-- Debug overlay — hidden unless body.debug-on (set when ?debug=1 in URL) -->
+<div id="debug-panel"><code id="debug-content">debug armed — waiting for state…</code></div>
+
 <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"
         integrity="sha384-x0YgkOr/3UOZP2CRDxGW9e0Q+2Qjyr3uJrm4xU32Y7ZCNAo7Cc7bjhrZMi/dwczu"
         crossorigin="anonymous"></script>
-<script src="remote.js"></script>
+<!-- ?v=… cache-bust so iOS Safari can't serve a stale script after hard-refresh -->
+<script src="remote.js?v=20260421-teleprompter-fix"></script>
 
 </body>
 </html>

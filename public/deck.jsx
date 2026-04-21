@@ -1351,8 +1351,14 @@ function SlideIntro() {
             // Phase 5 — Flash (0.25s). Release the singularity: burst
             // white-out, set uBurstTime so particle shader flips to
             // ejecta mode and expansion begins from origin.
+            //
+            // BUG FIX: uBurstTime MUST use the same clock reference as
+            // uTime (THREE.Clock.getElapsedTime) — not performance.now().
+            // Mismatched clocks produced a negative t in the shader and
+            // froze particles in idle mode for multiple seconds, which
+            // the user perceived as a "static frame" before the explosion.
             if (pMat.uniforms.uBurstTime.value < 0) {
-              pMat.uniforms.uBurstTime.value = performance.now() / 1000;
+              pMat.uniforms.uBurstTime.value = clock.getElapsedTime();
             }
             uniforms.uBurst.value = (t - 6.45) / 0.25;
             pMat.uniforms.uCollapse.value = 0;

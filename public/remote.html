@@ -91,11 +91,12 @@
    * ═══════════════════════════════════════════════════════════════ */
   #launchpad {
     flex: 1 1 auto;
+    min-height: 0;
     display: flex;
     flex-direction: column;
-    align-items: center; justify-content: center;
-    gap: 26px;
-    padding: 20px 20px 28px;
+    align-items: center;
+    gap: 18px;
+    padding: 14px 20px 20px;
     z-index: 1;
   }
   body:not(.on-intro) #launchpad,
@@ -104,7 +105,7 @@
   #btn-bigbang {
     appearance: none;
     flex: 0 0 auto;
-    width: min(60vw, 300px);
+    width: min(52vw, 240px);
     aspect-ratio: 1 / 1;
     border-radius: 50%;
     border: none;
@@ -206,6 +207,65 @@
     color: color-mix(in oklch, var(--accent) 70%, var(--ink));
     font-size: 13px;
     letter-spacing: 0.02em;
+  }
+
+  /* ═══════════════════════════════════════════════════════════════
+   * ABBREVIATIONS LEGEND — scrollable panel below the format legend.
+   * Two-column grid: terse term (monospace) | plain expansion (serif).
+   * Takes remaining vertical space in the launchpad with internal scroll.
+   * ═══════════════════════════════════════════════════════════════ */
+  #abbr-legend {
+    flex: 1 1 auto;
+    min-height: 80px;
+    width: 100%;
+    max-width: 380px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 10px 14px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+  }
+  #abbr-legend .abbr-header {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    padding-bottom: 6px;
+    margin-bottom: 6px;
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.08);
+    position: sticky;
+    top: -10px;
+    background: linear-gradient(
+      to bottom,
+      var(--bg) 0%,
+      var(--bg) 60%,
+      rgba(5, 5, 17, 0.95) 100%
+    );
+    z-index: 1;
+  }
+  #abbr-legend .abbr-row {
+    display: grid;
+    grid-template-columns: 88px 1fr;
+    column-gap: 10px;
+    padding: 4px 0;
+    align-items: baseline;
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.04);
+  }
+  #abbr-legend .abbr-row:last-child { border-bottom: none; }
+  #abbr-legend .abbr-term {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 500;
+    color: color-mix(in oklch, var(--accent) 50%, var(--ink));
+    letter-spacing: 0.02em;
+  }
+  #abbr-legend .abbr-def {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 12.5px;
+    color: var(--ink-2);
+    line-height: 1.4;
   }
 
   /* ═══════════════════════════════════════════════════════════════
@@ -590,6 +650,47 @@
       <span class="lg-meaning">Structural link across slides</span>
     </div>
   </div>
+
+  <div id="abbr-legend" aria-label="Abbreviations in the script">
+    <div class="abbr-header">Abbreviations · scroll</div>
+    <div class="abbr-row"><span class="abbr-term">PE</span><span class="abbr-def">Power Electronics</span></div>
+    <div class="abbr-row"><span class="abbr-term">IGBT</span><span class="abbr-def">Insulated-Gate Bipolar Transistor — dominant silicon power switch</span></div>
+    <div class="abbr-row"><span class="abbr-term">MOSFET</span><span class="abbr-def">Metal-Oxide-Semiconductor FET — fast switching transistor</span></div>
+    <div class="abbr-row"><span class="abbr-term">SiC</span><span class="abbr-def">Silicon Carbide — wide-bandgap semiconductor (3.26 eV)</span></div>
+    <div class="abbr-row"><span class="abbr-term">GaN</span><span class="abbr-def">Gallium Nitride — wide-bandgap (3.4 eV), megahertz-class switching</span></div>
+    <div class="abbr-row"><span class="abbr-term">DC-DC</span><span class="abbr-def">Direct-current to direct-current converter</span></div>
+    <div class="abbr-row"><span class="abbr-term">EV</span><span class="abbr-def">Electric Vehicle</span></div>
+    <div class="abbr-row"><span class="abbr-term">PSU</span><span class="abbr-def">Power Supply Unit — e.g., server / data-center PSU</span></div>
+    <div class="abbr-row"><span class="abbr-term">kW / kVA</span><span class="abbr-def">kilowatt / kilovolt-ampere — power ratings</span></div>
+    <div class="abbr-row"><span class="abbr-term">PI / PID</span><span class="abbr-def">Proportional-Integral (-Derivative) controller — classical feedback</span></div>
+    <div class="abbr-row"><span class="abbr-term">MPC</span><span class="abbr-def">Model Predictive Control — solves an optimization each sample</span></div>
+    <div class="abbr-row"><span class="abbr-term">NN</span><span class="abbr-def">Neural Network</span></div>
+    <div class="abbr-row"><span class="abbr-term">DNN</span><span class="abbr-def">Deep Neural Network (many hidden layers)</span></div>
+    <div class="abbr-row"><span class="abbr-term">CNN</span><span class="abbr-def">Convolutional Neural Network — images, signatures, spectrograms</span></div>
+    <div class="abbr-row"><span class="abbr-term">LSTM</span><span class="abbr-def">Long Short-Term Memory — recurrent net for time-series</span></div>
+    <div class="abbr-row"><span class="abbr-term">SVM</span><span class="abbr-def">Support Vector Machine — classical classifier</span></div>
+    <div class="abbr-row"><span class="abbr-term">RL</span><span class="abbr-def">Reinforcement Learning — learn policy via trial-and-error + reward</span></div>
+    <div class="abbr-row"><span class="abbr-term">TD3</span><span class="abbr-def">Twin Delayed Deep Deterministic policy gradient — RL algorithm</span></div>
+    <div class="abbr-row"><span class="abbr-term">GA</span><span class="abbr-def">Genetic Algorithm — evolution-inspired global search</span></div>
+    <div class="abbr-row"><span class="abbr-term">PSO</span><span class="abbr-def">Particle Swarm Optimization — flocking-inspired global search</span></div>
+    <div class="abbr-row"><span class="abbr-term">SA</span><span class="abbr-def">Simulated Annealing — metallurgy-inspired global search</span></div>
+    <div class="abbr-row"><span class="abbr-term">SPICE</span><span class="abbr-def">Simulation Program with Integrated Circuit Emphasis — the canonical circuit simulator</span></div>
+    <div class="abbr-row"><span class="abbr-term">THD</span><span class="abbr-def">Total Harmonic Distortion — waveform quality metric (grid-tied inverters)</span></div>
+    <div class="abbr-row"><span class="abbr-term">IEC 61508</span><span class="abbr-def">International standard for functional-safety certification of electronic systems</span></div>
+    <div class="abbr-row"><span class="abbr-term">SIL-2</span><span class="abbr-def">Safety Integrity Level 2 — moderate-stakes certification tier under IEC 61508</span></div>
+    <div class="abbr-row"><span class="abbr-term">OEM</span><span class="abbr-def">Original Equipment Manufacturer — e.g., Infineon, Wolfspeed, ABB</span></div>
+    <div class="abbr-row"><span class="abbr-term">PHM</span><span class="abbr-def">Prognostics &amp; Health Management — fault detection + life prediction</span></div>
+    <div class="abbr-row"><span class="abbr-term">RUL</span><span class="abbr-def">Remaining Useful Life — how long until the part fails</span></div>
+    <div class="abbr-row"><span class="abbr-term">PINN</span><span class="abbr-def">Physics-Informed Neural Network — net that respects a physical equation</span></div>
+    <div class="abbr-row"><span class="abbr-term">LIME</span><span class="abbr-def">Local Interpretable Model-agnostic Explanations — post-hoc XAI method</span></div>
+    <div class="abbr-row"><span class="abbr-term">SHAP</span><span class="abbr-def">SHapley Additive exPlanations — post-hoc XAI based on game theory</span></div>
+    <div class="abbr-row"><span class="abbr-term">HDL</span><span class="abbr-def">Hardware Description Language — Verilog, VHDL; describes digital circuits</span></div>
+    <div class="abbr-row"><span class="abbr-term">EMI</span><span class="abbr-def">Electromagnetic Interference — radiated/conducted noise from fast switching</span></div>
+    <div class="abbr-row"><span class="abbr-term">GPT</span><span class="abbr-def">Generative Pre-trained Transformer (e.g., GPT-2, GPT-4)</span></div>
+    <div class="abbr-row"><span class="abbr-term">Chronos / TimeGPT / TimesFM</span><span class="abbr-def">Recent (2024+) foundation models for time-series forecasting</span></div>
+    <div class="abbr-row"><span class="abbr-term">GPU / MIPS</span><span class="abbr-def">Graphics Processing Unit / Million Instructions Per Second — compute metrics</span></div>
+    <div class="abbr-row"><span class="abbr-term">fBm</span><span class="abbr-def">Fractional Brownian motion — noise process used in shader texturing</span></div>
+  </div>
 </div>
 
 <!-- STATE C: 5-second countdown overlay -->
@@ -634,7 +735,7 @@
         integrity="sha384-x0YgkOr/3UOZP2CRDxGW9e0Q+2Qjyr3uJrm4xU32Y7ZCNAo7Cc7bjhrZMi/dwczu"
         crossorigin="anonymous"></script>
 <!-- ?v=… cache-bust so iOS Safari can't serve a stale script after hard-refresh -->
-<script src="remote.js?v=20260421-legend-on-launchpad"></script>
+<script src="remote.js?v=20260421-abbr-legend"></script>
 
 </body>
 </html>

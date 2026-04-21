@@ -24,7 +24,7 @@
 
   /* Bumps per deploy so iOS Safari can't serve cached assets after
    * we ship a fix. Seen as ?v=<stamp> on remote.js + speaker-script.json. */
-  const BUILD_VERSION = '20260421-legend-on-launchpad';
+  const BUILD_VERSION = '20260421-abbr-legend';
 
   /* Total presentation budget used by the "Total" countdown in the
    * timer strip. Starts the moment the teleprompter lands on a

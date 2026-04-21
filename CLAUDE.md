@@ -1,8 +1,8 @@
 # CLAUDE.md — `ai-pe-deck` (AI in Power Electronics)
 
-**Last refreshed:** 2026-04-21 (post-Zed crash, after full audit)
-**Repo:** `github.com/Aswin-Ram-K/ai-pe-deck` · branch `main` · tracked HEAD `917d10a`
-**Also read:** `PROJECT_CONTEXT.md` (design-decision log — partially stale, see §Pitfalls) · `README.md` (user-facing run guide)
+**Last refreshed:** 2026-04-21 (post-teleprompter session)
+**Repo:** `github.com/Aswin-Ram-K/ai-pe-deck` · branch `main` · tracked HEAD `d68e51b`
+**Also read:** `PROJECT_CONTEXT.md` (design-decision log) · `SESSION_STATE.md` (session handoff + last-prompts packet) · `SPEAKER_SCRIPT.md` (canonical teleprompter source, Stark-edition) · `UNDERSTANDING_NOTES.md` (per-slide Q&A preparation) · `README.md` (user-facing run guide)
 
 ---
 
@@ -20,19 +20,21 @@ React+Babel load from CDN and `deck.jsx` is transpiled in-browser at boot.
 
 ---
 
-## Current state (2026-04-21)
+## Current state (2026-04-21, post-teleprompter)
 
 | Status | Item |
 |---|---|
 | ✅ Committed + deployed | 13 slides (s1–s13), PE visual library, scatterboard transitions, aurora+flow-field backdrop, PPTX export pipeline, GitHub Pages workflow |
-| ✅ Committed | Phone-remote subsystem (`remote-host.js` + `remote.html`/`.js`) via PeerJS, static peer ID `ai-pe-deck-aswin-ram-k-ece563`, auto-pair on load |
-| ✅ Committed | Voice control and reveal-group systems **removed** in `138f0b3` (superseded by phone remote) |
-| 🚧 **Uncommitted** (405 insertions, 4 deletions across 6 files) | Pre-show **Intro slide (s0)** — revolving pink/purple SVG star, 5 drifting hue orbs, 34-particle explosion on Start, dispatches `deck-explode` CustomEvent, fades aurora/flow-field to black during intro-mode |
+| ✅ Committed | Phone-remote subsystem (`remote-host.js` + `remote.html`/`.js`) via PeerJS, static peer ID `ai-pe-deck-aswin-ram-k-ece563` |
+| ✅ Committed | Cosmic intro v5 (SlideIntro): star-like orbital swirl + spiral-in collapse. Particles orbit Z-axis at 0.28-0.60 rad/s; collapse adds uCollapse²×8 rad spiral boost |
+| ✅ Committed | **BIG BANG countdown** (10 s) — full-screen take-over overlay, SpeechSynthesis voice (ten…one, "go"), WebAudio 440 Hz ticks + 880 Hz GO tone |
+| ✅ Committed | **Teleprompter subsystem** — top 3/4 of State B hosts scrolling speaker script (`SPEAKER_SCRIPT.md` → `speaker-script.json` via `build:script`); syllable-paced to 17 min (1020 s) across slides 1-12; accumulator-based scroll engine with 1 s breather on each slide start + end-of-slide pause |
+| ✅ Committed | **Pause / scrub** — touch-and-drag on teleprompter both pauses AND scrubs (finger up = forward); pause button overlay at bottom-left; timer ticks independent of pause state |
+| ✅ Committed | **Timers** — total (17:00 countdown) + per-slide countdown with red-flash + 1100 Hz beep on overtime; flex-sibling strip between tele-bar and teleprompter |
+| ✅ Committed | **Launchpad legends** — format legend (4 in-style samples) + scrollable abbreviations panel (36 entries) below BIG BANG button |
+| ✅ Committed | `UNDERSTANDING_NOTES.md` — per-slide conversational explanations + Q&A preparation (42 KB, repo root + Desktop mirror) |
 
-**Branch state:** clean ahead/behind vs origin; six files modified in working tree
-(`deck.jsx`, `index.html`, `remote-host.js`, `remote.html`, `remote.js`,
-`styles.css`). The intro-slide feature is cohesive and reviewable — commit
-it when you're satisfied with the visual.
+**Branch state:** clean, HEAD `d68e51b` pushed to `origin/main`. Pages deploys green (last run `24736506643`).
 
 ---
 
@@ -67,14 +69,19 @@ app/
 │   ├── engine.js          (225L)  ← aurora backdrop + flow-field canvas (voice system REMOVED)
 │   ├── styles.css         (856L*) ← theme tokens + animation primitives + intro-slide CSS*
 │   ├── speaker-notes.json         ← 13 narration strings (s1..s13; intro s0 has no narration by design)
-│   ├── remote-host.js     (244L*) ← deck-side PeerJS peer, static peer ID, handles next/prev/goto/start
-│   ├── remote.html        (269L*) ← phone UI: status dot, slide-num display, big prev/next buttons, swipe nav
-│   └── remote.js          (211L*) ← phone-side PeerJS client, auto-reconnect, intro-mode morphs Next→START
+│   ├── remote-host.js     (244L)  ← deck-side PeerJS peer, static peer ID, handles next/prev/goto/start
+│   ├── remote.html        (~550L) ← phone UI: States A/B/C, timer strip, pause button, legends, debug overlay
+│   ├── remote.js          (~600L) ← phone-side PeerJS client + countdown engine + scroll accumulator + timers + scrub/pause + debug
+│   └── speaker-script.json        ← generated; 13-slide structured script with per-slide timeBudgetSec (syllable-derived)
 ├── server/
 │   ├── index.js           (162L)  ← Express: static serve + /api/claude proxy + /api/save-notes + /healthz + port auto-detect
 │   └── scripts/
 │       ├── export-pptx.js (105L)  ← builds 16:9 full-bleed PPTX from _shots/pptx/*.png
-│       └── export-notes-pdf.js (41L)
+│       ├── export-notes-pdf.js (41L)
+│       └── build-script-json.js   ← parses SPEAKER_SCRIPT.md, counts syllables, writes speaker-script.json (17 min / 1020 s / 4533 syll across s1-s12)
+├── SPEAKER_SCRIPT.md              ← canonical teleprompter source (Stark-edition); edit here, rerun `npm run build:script`
+├── UNDERSTANDING_NOTES.md         ← per-slide plain-English breakdown + Q&A prep (42 KB)
+├── AI-PE-Speaker-Script.docx      ← legacy source (before markdown migration); kept for reference
 ├── _shots/                        ← gitignored; ~34 dev screenshots + pptx/s01..s13.png (the 13 used for export)
 ├── exports/                       ← gitignored *.pptx / *.pdf outputs
 ├── Dockerfile                     ← node:20-alpine, npm install --omit=dev (no lockfile!), expose 3000
@@ -116,7 +123,8 @@ app/
   - **Keyboard/Next-button/phone all trigger cinematic**: monkey-patch on `deck._go(targetIndex, reason)` intercepts Intro → forward advances; `.intro-exploding` class guard prevents re-interception of the scheduled advance at t=10.8s.
   - Pacing constants at top of `remote-host.js`: `INTRO_EXPLODE_TO_NEXT_MS` (10800) + `INTRO_TOTAL_BUDGET_MS` (12600). `FIRST_SLIDE_ENTER_MS` (1800) in deck.jsx. Total cosmic budget: **12.6 seconds** from BIG BANG to slide 1 fully settled.
   - Normal inter-slide transitions are 25% slower than originals (scatterboard durations 1.25×; EXIT 460→575ms, ENTER 560→700ms).
-  - **Queued features** (not yet built — see `SESSION_STATE.md` §"Open threads"): 5-second countdown on BIG BANG + scrolling speaker-notes teleprompter on the remote.
+  - **Countdown + teleprompter (built this session, see `SESSION_STATE.md` for details):** 10 s voice+tone countdown on BIG BANG tap, then cosmic intro (12.6 s), then teleprompter begins scrolling slide 1's script at its syllable-paced rate.
+- **Cosmic intro v5 orbital update (2026-04-21):** particles now swirl around Z-axis at 0.28-0.60 rad/s in idle; collapse adds `uCollapse²×8` rad spiral boost. Per-particle `aTheta0`, `aInPlaneR`, `aOmega` precomputed in JS (no per-frame atan2/sqrt in shader). Replaces the v4 isotropic-drift idle.
 
 - **`TOTAL = 13`** (in `deck.jsx` line 2260) is the number of numbered slides shown in the chrome (01/13..13/13). Do not change when adding intro-style pre/post-show slides — they sit outside the numbered sequence.
 
@@ -154,11 +162,24 @@ app/
 
 ---
 
-## Active work / next steps (as of 2026-04-21)
+## Teleprompter subsystem architecture (built 2026-04-21)
 
-1. Review and commit the intro-slide feature (6 uncommitted files, 405 insertions — reviewed, cohesive, ready).
-2. Decide on the stale-prose cleanup (PROJECT_CONTEXT.md §4 rewrite + 5 peripheral files).
-3. Decide on the reproducibility + security fixes listed in Pitfalls §2–§5.
-4. (Optional) Paint a real screenshot of slide s0 into `_shots/pptx/s00.png` if you want the intro in the PPTX export — currently excluded by design.
+- **Source:** `SPEAKER_SCRIPT.md` (markdown, Stark-edition prose). Edit here.
+- **Build:** `npm run build:script` parses the md with `mammoth`-independent regex splitters, strips stage directions, counts syllables via the `syllable` npm package, distributes 17 min (1020 s) across slides 1-12 by syllable ratio, writes `public/speaker-script.json`. Slide 13 (Q&A) gets `timeBudgetSec: null`.
+- **Remote fetches** `/speaker-script.json?v=<BUILD_VERSION>` on boot and renders 13 sections into `#tele-scroller`. Offsets measured lazily — first `teleOnSlideChange` after State B becomes visible (spec behavior: descendants of `display:none` ancestor report `offsetTop/offsetHeight === 0`).
+- **Scroll engine:** accumulator model. `currentOffsetPx += dt × pxPerSec` each rAF. Snap on slide change → `currentOffsetPx = slideOffsets[N]`. No race-prone `startTimeMs + elapsed × speed` math. Clamps at `maxOffsetPx = slideOffsets[N+1] - 12 px` so scroll stops at end of slide.
+- **Breather:** 1 s hold after each snap before accumulator advances (`scrollStartAtMs` gate inside `scrollTick`).
+- **Pause (two independent flags):** `manualPause` (touch on teleprompter) + `buttonPause` (pause icon overlay at bottom-left of teleprompter, above Next). Either freezes scroll. **Timers are independent of pause** (wall-clock accountability).
+- **Scrub:** touchmove on teleprompter updates `currentOffsetPx = startOffset + (startY - currentY)`. Finger up = forward. Release resumes auto-scroll from wherever landed.
+- **Timers:** total (17:00 → 0:00) + per-slide budget. Overtime fires 1100 Hz WebAudio beep + red flash (`body.slide-overtime`, 1.5 Hz pulse). Single-shot beep latched by `slideBeepedOver`.
+- **Debug overlay:** append `?debug=1` to the URL. Shows build version, phase (`idle/breathing/scrolling/end-reached`), offsets, heights, pause flags, timer values. Refreshes at 400 ms.
+- **Cache-bust:** `remote.html` loads `remote.js?v=<BUILD_VERSION>` and `remote.js` fetches `speaker-script.json?v=<BUILD_VERSION>`. Bump `BUILD_VERSION` on every behavioral change so iOS Safari re-fetches.
 
-Audit log for this session: `~/Desktop/audit-logs/022-ai-pe-deck-audit-2026-04-21/`.
+## Active work / next steps (as of 2026-04-21, session end)
+
+All stated user features implemented and pushed. Remaining items from prior session that the user explicitly deferred ("skip the maintenance part because this isn't going to be a recurring folder"):
+
+1. Reproducibility fixes (Pitfalls §2-§6) — deferred by user as non-blocking for the Apr 21 presentation.
+2. PPTX export still skips s0 by design (intro not in the numbered sequence).
+
+Audit log (superseded): `~/Desktop/audit-logs/022-ai-pe-deck-audit-2026-04-21/`.

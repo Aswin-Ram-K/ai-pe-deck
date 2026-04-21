@@ -155,3 +155,80 @@ local JSON fetch of `speaker-notes.json`.
 - 2026-04-21: Pushed to GitHub (`main` @ `d9a4b93`) + Pages deploy — static URLs replace LAN-IP dependency. Deck: `https://aswin-ram-k.github.io/ai-pe-deck/` · Remote: `.../remote.html`.
 - 2026-04-21: Session paused with two features queued for next session (5-second countdown on BIG BANG + scrolling speaker-notes teleprompter on remote). See `SESSION_STATE.md` for handoff detail.
 - 2026-04-21: Full audit (log `022-ai-pe-deck-audit-2026-04-21`) → added `package-lock.json`, pinned Node 20.18, SRI-hashed PeerJS, tightened stale voice-refs. `CLAUDE.md` initialized at project root.
+- 2026-04-21 (afternoon): **Teleprompter session.** Shipped the full phone-remote teleprompter subsystem: Stark-edition script + syllable-paced 17 min distribution + accumulator scroll engine + breather + end-of-slide pause + hold-to-pause + pause button + scrub + independent timers + overtime red-flash + format legend + scrollable abbreviations + `UNDERSTANDING_NOTES.md` + cosmic-intro v5 orbital swirl + 10 s countdown. HEAD `d68e51b`. See §§ 6-10 below for decisions.
+
+---
+
+## Session-6 design decisions (teleprompter + related, 2026-04-21)
+
+### 6 · Teleprompter pacing: syllables, not words
+
+**What was decided:** per-slide scroll speed is derived from syllable count, distributed across a 17-minute total budget.
+
+| Alternative | Why not |
+|---|---|
+| Flat WPM (140) | Ignores per-slide density — short slides would scroll unnecessarily slowly relative to dense ones |
+| Word count per slide | Words include particles ("a", "the") that aren't load-bearing; syllables reflect actual spoken time more precisely |
+| Author-authored per-slide `timeBudgetSec` in DOCX | Brittle — every script edit would require re-entering time values |
+
+**Why this won:** syllables ≈ phonetic units, which map closely to actual spoken time regardless of word length. `syllable` npm package handles English irregulars (silent-e, tion/cial, vowel pairs) well enough for teleprompter pacing. Rate lands at 4.44 syll/s (≈267 syll/min) — natural for a technical talk.
+
+**Key data:** 4,533 syllables across slides 1-12 → 1020.0 s total. Per-slide: s01 = 41.6 s, s07 = 171.7 s (peak slide), s12 = 34.2 s. Script's internal "Time budget: NN s" annotations were dropped in favor of syllable derivation.
+
+### 7 · Scroll engine: per-frame accumulator, not baseline+elapsed
+
+**What was decided:** `currentOffsetPx += dt × pxPerSec` each rAF. Snap on slide change = assign `currentOffsetPx = slideOffsets[N]`.
+
+**Alternatives considered (and the bugs they caused):**
+- `scroller.style.transform = translateY(-(baselineOffsetPx + elapsed × pxPerSec))`: original design. Next-button tap would reset `baselineOffsetPx` + `startTimeMs` with a 420 ms `setTimeout` between snap and new scrollTick. A leftover rAF from the PREVIOUS scrollTick could fire between snap and startScroll, read the NEW baselineOffsetPx with the OLD startTimeMs, and produce a jump back to near-zero scroll. **Unreliable — user reported "script starts freshly from the very beginning" on every Next tap.**
+- CSS transition interpolation: too slow for responsive scrubbing (380 ms lag).
+
+**Why this won:** per-frame accumulator has no time math to race. Any in-flight rAF just reads the updated `currentOffsetPx` and continues from there. Snap is a single assignment. Verified: 7 slide-change scenarios snap within 1.1 px of target.
+
+**Separate issue, same fix:** end-of-slide pause (`maxOffsetPx = slideOffsets[N+1] - 12`) stops the rAF entirely when the clamp is reached. Saves CPU and removes any risk of the accumulator drifting past the slide.
+
+### 8 · Hold-to-pause AND scrub on the same gesture
+
+**What was decided:** touch on the teleprompter both pauses auto-scroll AND lets the user drag to scrub. Finger up = forward, finger down = backward. Release resumes auto-scroll from wherever they landed.
+
+**Alternative rejected:** separate modes (a dedicated "scrub" toggle button that, when active, lets you drag). Rejected because a presenter on stage doesn't have thumb-glance-time to toggle modes. One-finger gesture is lower cognitive load.
+
+**Second decision:** timers are **independent** of pause. Wall-clock accountability — pausing doesn't buy back stage time. Overtime alerts fire based on real elapsed time. This is explicit per user directive: "The timer should be independent as soon as the presentation starts."
+
+### 9 · Launchpad legends (format + abbreviations)
+
+**What was decided:** the BIG BANG screen now carries two legends below the button — a format legend (4 in-style samples: body / stage / quote / callback) + a scrollable abbreviations panel (36 entries: IGBT, SiC, MPC, TD3, PINN, etc.). BIG BANG button shrunk from 72 vw / 380 px → 52 vw / 240 px to make room.
+
+**Alternative rejected:** a separate `?help=1` page or modal. Rejected because extra navigation = presenter loses pre-show focus. Everything on one screen, scroll to reference, tap to launch.
+
+**Why each format renders in its teleprompter style:** presenters memorize visual → meaning, not verbal descriptions. Seeing `> Accent-bar italic — Signature line · weight` on the pre-show screen means during the talk, when they see the same accent bar, they know to deliver with weight without re-reading the label.
+
+### 10 · Cosmic intro v5: orbital swirl replaces isotropic drift
+
+**What was decided:** pre-BIG-BANG particles orbit the Z-axis at 0.28-0.60 rad/s. Collapse adds `uCollapse² × 8` rad spiral boost so particles spiral *inward* rather than radially collapse.
+
+**Alternatives considered:**
+- Each particle orbits its own random axis (galactic/chaotic feel): rejected for visual incoherence.
+- Flat 2D disk (all particles in xy plane): rejected because it loses the volumetric feel the presenter asked for ("floating around like a star").
+
+**Why Z-axis won:** camera faces -Z, so Z-axis orbits are visible face-on. Particles at higher `|z|` have smaller `aInPlaneR = sqrt(1-z²)` so they move less — natural latitude-like depth cue, like Earth's equator spinning faster than its poles.
+
+**Performance:** `aTheta0`, `aInPlaneR`, `aOmega` precomputed in JS once per boot, stored as `BufferAttribute`s. Shader uses them directly — no per-frame atan2/sqrt across 6000 particles.
+
+### 11 · Countdown extended 5 s → 10 s
+
+Originally 5 s per presenter brief. Extended to 10 s at session end for a longer pre-presentation composure window. `numberWord` map expanded to cover 10-1 so SpeechSynthesis says words ("ten, nine, eight…") rather than digit strings.
+
+---
+
+## Files added / materially modified this session
+
+| Path | Role |
+|---|---|
+| `SPEAKER_SCRIPT.md` | New — canonical teleprompter source, Stark-edition prose, replaces DOCX |
+| `UNDERSTANDING_NOTES.md` | New — per-slide conversational Q&A prep (42 KB, mirrored to `~/Desktop/`) |
+| `server/scripts/build-script-json.js` | New — mammoth-independent md parser + syllable counter + 17 min distributor |
+| `public/speaker-script.json` | New — generated artifact, commits so Pages serves it |
+| `public/remote.html` / `public/remote.js` | Heavy expansion — State C countdown, timer strip, pause/scrub, legends, debug overlay, cache-bust |
+| `public/deck.jsx` | SlideIntro vertex shader: orbital attributes + spiral-collapse term |
+| `package.json` | Added dev deps `mammoth` (legacy DOCX import path) and `syllable` |

@@ -306,12 +306,9 @@
     0%, 100% { opacity: 1; }
     50%      { opacity: 0.25; }
   }
-  body.is-paused #total-timer-value,
-  body.is-paused #slide-timer-value {
-    color: var(--ink-3);
-    text-decoration: line-through;
-    text-decoration-thickness: 1px;
-  }
+  /* Timers are now independent of the pause state — they always
+   * advance once the presentation starts. The strikethrough that
+   * used to signal "timer frozen" has been removed. */
 
   #teleprompter {
     flex: 1 1 auto;
@@ -557,7 +554,7 @@
         integrity="sha384-x0YgkOr/3UOZP2CRDxGW9e0Q+2Qjyr3uJrm4xU32Y7ZCNAo7Cc7bjhrZMi/dwczu"
         crossorigin="anonymous"></script>
 <!-- ?v=… cache-bust so iOS Safari can't serve a stale script after hard-refresh -->
-<script src="remote.js?v=20260421-pause-timers"></script>
+<script src="remote.js?v=20260421-scrub-indep-timers"></script>
 
 </body>
 </html>

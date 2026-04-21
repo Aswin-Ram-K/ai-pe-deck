@@ -24,7 +24,7 @@
 
   /* Bumps per deploy so iOS Safari can't serve cached assets after
    * we ship a fix. Seen as ?v=<stamp> on remote.js + speaker-script.json. */
-  const BUILD_VERSION = '20260421-pause-timers';
+  const BUILD_VERSION = '20260421-scrub-indep-timers';
 
   /* Total presentation budget used by the "Total" countdown in the
    * timer strip. Starts the moment the teleprompter lands on a
@@ -526,12 +526,16 @@
       return;
     }
 
+    // If the user scrubbed past the current slide's end-clamp, don't
+    // force them back — just hold. The deck advancing / next-state
+    // will re-seed with a new maxOffsetPx.
+    if (tele.currentOffsetPx >= tele.maxOffsetPx) return;
+
     // Cap dt at 100 ms — backgrounded-tab rAF pauses would otherwise
     // cause a visible scroll-leap on resume.
     const dt = Math.min((now - tele.lastFrameMs) / 1000, 0.1);
     tele.lastFrameMs = now;
 
-    // Advance, but clamp at the end-of-slide max.
     const next = Math.min(
       tele.currentOffsetPx + dt * tele.pxPerSec,
       tele.maxOffsetPx
@@ -583,11 +587,11 @@
     const now = performance.now();
     const dt = now - tele.lastTimerTickMs;
     tele.lastTimerTickMs = now;
-    // Pause both timers when pause is active
-    if (!isPaused()) {
-      tele.totalElapsedMs += dt;
-      if (tele.slideDurationMs > 0) tele.slideElapsedMs += dt;
-    }
+    // Timers are INDEPENDENT of scroll pause — wall-clock accountability.
+    // Once the presentation has started they advance every tick, whether
+    // the user is holding/scrubbing or the pause button is engaged.
+    tele.totalElapsedMs += dt;
+    if (tele.slideDurationMs > 0) tele.slideElapsedMs += dt;
     renderTimers();
     // Overtime trigger — once per slide
     if (tele.slideDurationMs > 0 && !tele.slideBeepedOver) {
@@ -652,38 +656,95 @@
     location.reload();
   });
 
-  /* ───────────────────── pause controls ─────────────────────────
-   * Two independent flags compose:
-   *   manualPause = touch-and-hold anywhere on the teleprompter
-   *   buttonPause = pause-button toggle state
-   * If EITHER is true, scrollTick + timerTick freeze.
-   * ─────────────────────────────────────────────────────────────── */
+  /* ═══════════════════════════════════════════════════════════════
+   * SCROLL PAUSE + SCRUB
+   *
+   * Touch on the teleprompter both pauses auto-scroll AND lets the
+   * user scrub by dragging:
+   *   touchstart  → capture {startY, startOffset}; manualPause=true
+   *   touchmove   → currentOffsetPx = startOffset + (startY - currY)
+   *                 (drag up = forward, drag down = backward)
+   *   touchend    → manualPause=false; auto-scroll resumes from
+   *                 wherever currentOffsetPx landed
+   * Button pause is separate/sticky.
+   *
+   * Timers are NOT affected by either — they tick regardless.
+   * ═══════════════════════════════════════════════════════════════ */
 
   function syncPausedClass() {
     document.body.classList.toggle('is-paused', tele.manualPause || tele.buttonPause);
   }
 
-  // Touch-and-hold anywhere on the scrolling window pauses scroll.
+  function getMaxScrubOffsetPx() {
+    // Max scrollable = end of last slide's content. Let the user
+    // scrub to the very end of the script, not just the next-slide
+    // clamp that auto-scroll uses.
+    const scroller = $('tele-scroller');
+    if (!scroller) return 0;
+    const last = scroller.querySelector('section:last-child');
+    if (!last) return scroller.offsetHeight;
+    return last.offsetTop + last.offsetHeight;
+  }
+
+  let scrub = null;  // { startY, startOffset }
+
+  function applyScrubTransform(offset) {
+    const scroller = $('tele-scroller');
+    if (!scroller) return;
+    scroller.classList.add('smooth');
+    scroller.style.transform = `translateY(-${offset}px)`;
+  }
+
+  const onHoldStart = (e) => {
+    const p = e.touches ? e.touches[0] : e;
+    if (!p) return;
+    scrub = { startY: p.clientY, startOffset: tele.currentOffsetPx };
+    tele.manualPause = true;
+    syncPausedClass();
+  };
+
+  const onHoldMove = (e) => {
+    if (!scrub) return;
+    const p = e.touches ? e.touches[0] : e;
+    if (!p) return;
+    // Finger up → currentY < startY → dy positive → offset increases
+    const dy = scrub.startY - p.clientY;
+    let next = scrub.startOffset + dy;
+    next = Math.max(0, Math.min(next, getMaxScrubOffsetPx()));
+    tele.currentOffsetPx = next;
+    applyScrubTransform(next);
+  };
+
+  const onHoldEnd = () => {
+    if (scrub) scrub = null;
+    tele.manualPause = false;
+    syncPausedClass();
+    // Re-seed lastFrameMs so the resumed scroll doesn't suddenly jump
+    // by whatever dt accumulated during the scrub.
+    tele.lastFrameMs = performance.now();
+  };
+
   const teleEl = $('teleprompter');
-  const onHoldStart = () => { tele.manualPause = true; syncPausedClass(); };
-  const onHoldEnd   = () => { tele.manualPause = false; syncPausedClass(); };
-  teleEl.addEventListener('touchstart', onHoldStart, { passive: true });
-  teleEl.addEventListener('touchend',   onHoldEnd,   { passive: true });
-  teleEl.addEventListener('touchcancel', onHoldEnd,  { passive: true });
-  // Desktop fallbacks for testing
+  teleEl.addEventListener('touchstart',  onHoldStart, { passive: true });
+  teleEl.addEventListener('touchmove',   onHoldMove,  { passive: true });
+  teleEl.addEventListener('touchend',    onHoldEnd,   { passive: true });
+  teleEl.addEventListener('touchcancel', onHoldEnd,   { passive: true });
+  // Desktop fallbacks for MCP testing
   teleEl.addEventListener('mousedown',  onHoldStart);
+  teleEl.addEventListener('mousemove',  (e) => { if (e.buttons) onHoldMove(e); });
   teleEl.addEventListener('mouseup',    onHoldEnd);
   teleEl.addEventListener('mouseleave', onHoldEnd);
 
-  // Pause button for longer pauses — toggle.
+  // Pause button for longer pauses — sticky toggle.
   $('btn-pause').addEventListener('click', (e) => {
-    // Block the click from bubbling to teleprompter / other handlers
     e.stopPropagation();
     tele.buttonPause = !tele.buttonPause;
     syncPausedClass();
     const btn = $('btn-pause');
     btn.textContent = tele.buttonPause ? '▶' : '⏸';
     btn.setAttribute('aria-pressed', String(tele.buttonPause));
+    // Re-seed lastFrameMs on resume so we don't leap.
+    if (!tele.buttonPause) tele.lastFrameMs = performance.now();
   });
 
   /* ───────────────────── gestures ───────────────────────────────── */

@@ -24,7 +24,7 @@
 
   /* Bumps per deploy so iOS Safari can't serve cached assets after
    * we ship a fix. Seen as ?v=<stamp> on remote.js + speaker-script.json. */
-  const BUILD_VERSION = '20260421-teleprompter-fix';
+  const BUILD_VERSION = '20260421-accumulator-scroll';
 
   /* Teleprompter pacing knob. 1.0 = match the script's per-slide
    * time budgets exactly. >1 = slower scroll (teleprompter lingers);
@@ -51,11 +51,15 @@
     slideOffsets: [],       // index i → offsetTop of slide i's <section>
     slideHeights: [],       // index i → height of slide i's <section>
     currentIdx: 0,          // last slide index we snapped to
-    started: false,         // true once we've seen the first slide-1 landing
+    started: false,         // true once we've seen the first non-Intro landing
     rafId: null,
-    startTimeMs: 0,         // wall clock when the current slide's scroll began
-    baselineOffsetPx: 0,    // scroll offset at startTimeMs
-    pxPerSec: 0,            // derived from slide height / budget
+    /* ACCUMULATOR scroll model:
+     *   currentOffsetPx advances by dt * pxPerSec every animation frame.
+     *   On slide change, we jump currentOffsetPx to the new slide's
+     *   offsetTop — no elapsed-time math that can race a leftover rAF. */
+    currentOffsetPx: 0,     // current scroll position (px from top of column)
+    lastFrameMs: 0,         // wall clock of last scrollTick call
+    pxPerSec: 0,            // current scroll speed (derived from slide budget)
   };
 
   /* ───────────────────── UI helpers ─────────────────────────────── */
@@ -383,57 +387,68 @@
     if (tele.currentIdx === slideIndex) return;  // no change
     tele.currentIdx = slideIndex;
 
-    snapToSlide(slideIndex, /*animated*/ true);
+    // Jump to the new slide's top and begin scrolling from there.
+    // Order matters: snap FIRST so any in-flight rAF from the old
+    // scrollTick sees currentOffsetPx at the new position; startScroll
+    // cancels the old rAF and starts a fresh one with new pxPerSec.
+    snapToSlide(slideIndex);
     startScroll(slideIndex);
   }
 
   function teleReset() {
-    // Only reset if we were past intro. If still on intro (first load), no-op.
     if (!tele.started) return;
     tele.started = false;
     tele.currentIdx = 0;
+    tele.currentOffsetPx = 0;
     document.body.classList.remove('tele-started');
     stopScroll();
     const scroller = $('tele-scroller');
     if (scroller) {
       scroller.classList.add('smooth');
       scroller.style.transform = 'translateY(0)';
-      requestAnimationFrame(() => scroller.classList.remove('smooth'));
     }
   }
 
-  function snapToSlide(slideIndex, animated) {
+  /* Instant jump to the top of a given slide. Uses .smooth
+   * (transition:none) so there's no intermediate animation state
+   * that could race the new scrollTick. Q: why not animate the
+   * snap? A: animation intent is a behavioral smell here — the deck
+   * itself fires the scatterboard transition, and layering two
+   * concurrent animations on both screens reads as lag. One discrete
+   * snap per Next-tap is the right UX. */
+  function snapToSlide(slideIndex) {
+    stopScroll();
+    const off = tele.slideOffsets[slideIndex];
+    if (typeof off !== 'number') return;  // measurement not ready
+    tele.currentOffsetPx = off;
     const scroller = $('tele-scroller');
     if (!scroller) return;
-    const off = tele.slideOffsets[slideIndex] || 0;
-    tele.baselineOffsetPx = off;
-    if (!animated) scroller.classList.add('smooth');
-    else scroller.classList.add('jumping');
+    scroller.classList.add('smooth');
     scroller.style.transform = `translateY(-${off}px)`;
-    // Remove transition helpers after frame
-    requestAnimationFrame(() => {
-      scroller.classList.remove('jumping');
-      if (!animated) scroller.classList.remove('smooth');
-    });
   }
 
   function startScroll(slideIndex) {
     stopScroll();
-    const budget = tele.script.slides.find(s => s.index === slideIndex)?.timeBudgetSec || 75;
+    const slide = tele.script.slides.find(s => s.index === slideIndex);
+    const budget = (slide && typeof slide.timeBudgetSec === 'number')
+      ? slide.timeBudgetSec : 75;
     const height = tele.slideHeights[slideIndex] || 400;
     tele.pxPerSec = height / (budget * TELE_SPEED_MULTIPLIER);
-    tele.startTimeMs = performance.now();
-    // let the snap animation land before starting smooth scroll
-    setTimeout(() => { if (tele.currentIdx === slideIndex) scrollTick(); }, 420);
+    tele.lastFrameMs = performance.now();
+    tele.rafId = requestAnimationFrame(scrollTick);
   }
 
   function scrollTick() {
     const scroller = $('tele-scroller');
     if (!scroller || !tele.started) return;
     scroller.classList.add('smooth');
-    const elapsedSec = (performance.now() - tele.startTimeMs) / 1000;
-    const offset = tele.baselineOffsetPx + elapsedSec * tele.pxPerSec;
-    scroller.style.transform = `translateY(-${offset}px)`;
+    const now = performance.now();
+    // Cap dt at 100ms — if the tab was backgrounded, rAF pauses, and
+    // a huge dt would cause a visible scroll-leap on resume.
+    const dt = Math.min((now - tele.lastFrameMs) / 1000, 0.1);
+    tele.lastFrameMs = now;
+    tele.currentOffsetPx += dt * tele.pxPerSec;
+    scroller.style.transform = `translateY(-${tele.currentOffsetPx}px)`;
     tele.rafId = requestAnimationFrame(scrollTick);
   }
 
@@ -511,7 +526,7 @@
       tele_scriptSlides: tele.script?.slides?.length ?? null,
       tele_started: tele.started,
       tele_currentIdx: tele.currentIdx,
-      tele_baselineOffsetPx: tele.baselineOffsetPx,
+      tele_currentOffsetPx: Number(tele.currentOffsetPx?.toFixed?.(1) ?? 0),
       tele_pxPerSec: Number(tele.pxPerSec?.toFixed?.(2) ?? 0),
       tele_slideOffsets: tele.slideOffsets,
       tele_slideHeights: tele.slideHeights,
@@ -523,6 +538,9 @@
   if (DEBUG) {
     document.body.classList.add('debug-on');
     setInterval(updateDebugPanel, 400);
+    // Debug-only test hook: lets tests (or devtools console) simulate
+    // an incoming state message without needing a real deck peer.
+    window.__teleTestSetSlide = setSlide;
   }
 
   /* ───────────────────── boot ───────────────────────────────────── */

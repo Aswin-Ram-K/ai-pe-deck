@@ -1,0 +1,351 @@
+# AI in Power Electronics — Speaker Script (Stark Edition)
+
+**Presenter:** Aswin Ram Kalugasala Moorthy
+**Course:** ECE-563 Smart Grid · Spring 2026
+**Paper:** Zhao, Blaabjerg & Wang (2021). *An Overview of Artificial Intelligence Applications for Power Electronics.* IEEE TPEL 36(4): 4633–4658.
+**Duration:** 17 minutes (13 numbered slides + Q&A)
+**Compiled:** 2026-04-21
+
+---
+
+## How to read this script
+
+| Marker | Meaning |
+|---|---|
+| Body text | What you say. Written for spoken rhythm. |
+| *[italicized bracketed text]* | Stage direction — physicality, pause, eye-line. Not spoken. Not counted toward pacing. |
+| > Blockquote | Load-bearing quip. Signature line. Deliver with weight. Do not paraphrase. |
+| CALLBACK → / ← CALLBACK | Structural link across slides. Don't accidentally break them. |
+
+---
+
+## Slide 1 — Opening thesis
+Visual cue: Title slide — paper citation, your name.
+
+Alright. For the next fifteen minutes we're walking through a 2021 review by Zhao, Blaabjerg, and Wang. Their map of how AI swept into power electronics over the last decade.
+
+I'll lay out their taxonomy. Go phase by phase with real examples. And then —
+
+*[beat]*
+
+— tell you the three things I think they got wrong. Or at least, under-weighted.
+
+> Everything in this talk ultimately comes back to one uncomfortable question: can a neural net convince a functional-safety auditor not to light up a substation? Spoiler — not yet. We're going to talk about why that matters.
+
+CALLBACK → Fifteen minutes is short. So I'm going to be unfair to the paper in exactly three specific ways. And I'm going to tell you in advance which three — so you can keep me honest.
+
+*[Hold two full seconds before advancing. Eye-line across the room. Chekhov's gun — it fires on slide 11.]*
+
+---
+
+## Slide 2 — Why this matters
+Visual cue: Wide-bandgap trends, EV / solar / data-center iconography.
+
+Everything we've covered in this course — smart grid, grid-edge, EV charging, solar, data-center PSUs — runs on power-electronic converters. And the converters are getting harder.
+
+Wide-bandgap is the reason. Silicon: one point one two electron-volts. Silicon carbide: three point two six. Gallium nitride: three point four. Diamond — the unobtainium of this field — five point five.
+
+In practice: silicon IGBTs switch at twenty kilohertz. SiC MOSFETs push to two or three hundred kilohertz. GaN past one megahertz.
+
+> Two orders of magnitude of switching speed in fifteen years. Three if you count lab prototypes. Four if you count PowerPoints.
+
+And the grid side demands tighter integration, more telemetry, faster control. Classical methods — hand-tuned PI, first-principles design — are hitting ceilings.
+
+> Hand-tuning PI gains on a megahertz-switching GaN converter is physically possible, in the same way that painting a Ferrari with a toothbrush is physically possible. At that frequency, the delay between your thought and the tuner's action is already longer than the event you're trying to control. The human is the bottleneck. That's not a metaphor. That's arithmetic.
+
+So here's the paper's thesis: AI isn't the research curiosity it was in 2005. It's deployed across the full power-electronics lifecycle — design, control, and maintenance. Here's their map.
+
+---
+
+## Slide 3 — The paper itself
+Visual cue: Paper cover / citation.
+
+Forty seconds on the paper, then we move.
+
+It's a review. Not a new algorithm — a map. Five hundred-plus publications surveyed, bucketed into a lifecycle-by-method taxonomy.
+
+> Review papers come in two flavors: tourist maps — pretty, useless — and surveyor's plats, where every fence post is marked. This is the second kind. Twenty-nine years of receipts.
+
+> Five hundred citations. The interesting question isn't what they say. It's the shape of the silence — what the taxonomy can't accommodate. We'll get there on slide eleven.
+
+Structure I'm using: walk the taxonomy, go deep on each phase with real examples, then give my critical take on what the paper doesn't say.
+
+*[Deliberately short slide. Breathe. Structural pause between setup and content.]*
+
+---
+
+## Slide 4 — The 3 × 4 taxonomy
+Visual cue: Big matrix — three rows, four columns, publication-share bars.
+
+Here's the spine.
+
+Three rows: design, control, maintenance. Four columns: expert systems, fuzzy logic, metaheuristics, machine learning. Every paper in the field lives in exactly one cell.
+
+The striking thing is the publication share. Of five hundred papers: control, seventy-eight percent. Maintenance, twelve. Design, ten.
+
+> Seventy-eight percent of the papers are in control. That's not a trend — that's a confession. It means we don't know how to design things well, we don't know how to maintain them well, but by God we can make them do backflips mid-flight. Control is where the problem is clean. Sensors, plant, tracking error. You can simulate it, benchmark it, publish a plot that looks obviously better than last year's. It's catnip for researchers.
+
+Design and maintenance don't have a clean tracking error. They're harder to formulate as AI tasks. Which is exactly why they're under-represented — and exactly where the open research opportunity sits.
+
+CALLBACK → If you're a PhD student choosing where to plant your flag — seventy-eight percent is a crowded beach. Design and maintenance, together, are twenty-two. That's where the empty lots are.
+
+Remember that twelve percent on maintenance.
+
+*[Beat. Point at the twelve percent bar. Make the callback physical.]*
+
+CALLBACK → Hold that number.
+
+Let me take each toolkit in turn.
+
+---
+
+## Slide 5 — Four tools, four regimes
+Visual cue: Four columns, one vignette each.
+
+Four tools, four regimes.
+
+Expert systems. The oldest. Encode a senior engineer's if-then rules. Explainability is their superpower. The weakness: you can't codify judgment the engineer can't articulate.
+
+> Expert systems outperformed junior doctors at diagnosis in the nineteen-seventies. They were never deployed. The reason is the same one that's blocking neural controllers in twenty twenty-six — nobody wants to certify the black box. History isn't repeating. It's rhyming, loudly.
+
+Fuzzy logic. The breakthrough of the eighties. Lets you reason about "somewhat high current" as a first-class variable. Still quietly shipping in motor drives today.
+
+> Fuzzy logic is the jazz of control theory. You thought it was dead. It's quietly everywhere. And the people who use it well are terrifying — because they're solving with heuristics what everyone else is solving with four-layer neural nets and five times the compute.
+
+Metaheuristics. Genetic algorithms, particle swarm, simulated annealing. Gradient-free.
+
+> Gradient-free optimizers are the last resort of the honest engineer. When your cost surface is non-convex, non-differentiable, and changes topology halfway through a search — you're not optimizing, you're praying. You just want the prayers vectorized.
+
+Machine learning. The fastest-growing category. Support vector machines, convolutional nets, LSTMs, reinforcement learning — name it.
+
+The paper is refreshingly sober here. No universal winner. Each tool fits a regime.
+
+> That's not a hedge. That's Wolpert's No Free Lunch Theorem, nineteen ninety-seven, formally proved. Averaged over every possible problem, every algorithm is exactly as bad as every other. The moment you commit to one tool for all problems, you aren't metaphorically wrong — you're mathematically wrong.
+
+*[Name-drop Wolpert with full confidence. Then move.]*
+
+---
+
+## Slide 6 — Design phase
+Visual cue: Pareto front, topology candidates.
+
+Design is only ten percent of the literature. But it's where metaheuristics shine.
+
+Take the problem: spec a DC-DC converter for a three-hundred-fifty kilowatt EV charger. Buck, boost, interleaved, resonant, multi-level topologies on the shelf. Each with its own magnetics, caps, semiconductors. The design space is combinatorial.
+
+Classical flow: an engineer iterating analytically — ten options in a working day.
+
+AI-augmented flow: a genetic algorithm or particle swarm explores thousands of candidates in simulation per hour. No gradients needed — critical, because the cost surface is non-differentiable when you're jumping between topologies.
+
+The output isn't a winner. It's a Pareto front. The engineer picks a point on the frontier.
+
+The newer move: deep-neural-net surrogates. Train a neural net on a simulation corpus. Use it as a fast approximator inside the search loop. SPICE evaluations drop from seconds to microseconds.
+
+> Training a neural net to approximate SPICE a million times faster is a species of hubris I fully endorse. The engineer says, this simulator is slow. The ML person says, hold my beer, I'll just learn a function approximation of it. Somehow this works — most of the time. When it doesn't, you find out because the magic smoke comes out of something expensive.
+
+The framing shift.
+
+> An engineer on deadline evaluates ten topologies in a day. A genetic algorithm evaluates ten thousand overnight. That's three orders of magnitude of exploration the engineer was never going to do anyway. The AI isn't replacing the engineer. It replaces the engineer's worst day — the day they picked one of three topologies because they ran out of time.
+
+---
+
+## Slide 7 — Control phase (peak slide)
+Visual cue: Three-tier stack — fuzzy, NN-MPC, RL.
+
+Control is the heart of the field. Seventy-eight percent of the papers live here. Not just volume — the work is genuinely mature.
+
+Let me walk up the stack.
+
+*[Physicality cue: raise hand with each tier. Bottom tier low. Top tier high. Height on stage mirrors abstraction in the stack.]*
+
+Bottom tier — fuzzy controllers. Not exotic. They've been shipping in motor drives and DC-DC converters for thirty years. They handle sensor noise and nonlinearities — saturation, deadtime — more gracefully than rigid PI gains.
+
+> You're not going to publish a paper about a deployed fuzzy controller. You're also never going to have to explain to a reliability engineer why the policy is weirder on Tuesdays. There's a quiet dignity in that.
+
+Middle tier — neural-net controllers. Rather than hand-tune, you let a neural net learn the plant's inverse from input-output data.
+
+And then the key unlock: neural-net-approximated Model Predictive Control. MPC solves an optimization at every sample step. On converter-scale switching frequencies, that's impossible. So you train a neural net offline on the MPC's input-output behavior, and run the net online. Near-MPC performance at microsecond inference.
+
+> Neural-net-approximated MPC is a delightful cheat. MPC is too slow to run at switching frequency, so we train a neural net to lie about what MPC would have said — fast enough to matter. The lie is a good one. The performance is near-MPC. And nobody has to solve a quadratic program in eight microseconds.
+
+> MPC itself didn't start in power electronics. It started in oil refineries — slow processes, powerful computers. It took control theorists forty years to admit that predict the future and optimize is the whole game. Then machine learning showed up, didn't read the paper, and took credit.
+
+Top tier, research frontier — reinforcement learning. The pitch: multi-objective optimization in one shot. Efficiency, total harmonic distortion, thermal, device lifetime — all traded off by the RL agent.
+
+> Reinforcement learning on a grid inverter is AlphaGo for power. The difference is scale. AlphaGo got forty days to train on simulated games. A TD3 agent for an inverter needs about seventy-two hours of training — which is manageable — and about a hundred-fifty-six microseconds to inference, which is not. An inverter gets forty microseconds between switching interrupts before the transistor dies. The arithmetic is not close. And when AlphaGo made a weird move, it cost DeepMind a game. A weird move on a five-hundred-kilovolt-ampere inverter costs a substation.
+
+And that's the unsolved piece. Certification.
+
+How do you convince an IEC sixty-one-five-oh-eight functional-safety auditor that a reinforcement-learning policy on a grid-connected inverter won't do something unsafe?
+
+> This isn't a research problem. It's a commercial blocker. Right now. At every major inverter OEM. Nobody has a good answer yet. Which means there is currently a billion-dollar industry waiting for paperwork.
+
+*[Two-second hold. This is the slide where the audience feels the field's real tension.]*
+
+---
+
+## Slide 8 — Maintenance (the bet, planted)
+Visual cue: Fleet-of-modules schematic, remaining-useful-life prediction with uncertainty band.
+
+Maintenance is where machine learning has the cleanest value proposition.
+
+And — I'll just say it — where the next five years actually matter.
+
+*["I'll just say it" is the hook — unprofessionally honest. Use it once.]*
+
+Classical condition monitoring is model-based. You write a physics model for IGBT degradation — bond-wire fatigue, solder-layer cracking — and detect deviations. Those models are conservative. Hard to calibrate.
+
+> The dominant lifetime model for silicon-carbide modules in twenty twenty-six is still Coffin-Manson — a fatigue equation from nineteen-fifties aircraft-engine research. If you think the field is moving fast, remember: we're predicting next year's chip deaths with a sixty-year-old metallurgy curve. That is not a sign of intellectual progress. That is a sign of intellectual inertia.
+
+The data-driven approach inverts it. Instrument a fleet. Run them to failure. Train a convolutional net on current and voltage signatures to classify the fault. Add LSTMs on junction-temperature and bond-wire-resistance time series for the degradation trajectory.
+
+For remaining-useful-life: a hybrid Gaussian-process-plus-neural-net gives you a point prediction and an uncertainty band. Which is what a shift planner actually needs.
+
+> Classical prognostics asks: is it broken? Binary, fault or no fault. Data-driven prognostics asks: how long does it have, and how sure are you? A distribution over futures. One is a yes-or-no. The other is a probability and a deadline. The physics framing wasn't answering a wrong question. It was answering a different era's question. The era changed.
+
+The flywheel.
+
+Modern IGBT and SiC modules ship with embedded junction-temperature sensors and DC-link telemetry. More sensors means more data means better models means the next generation ships with better targeting.
+
+> A data flywheel is unfair. Every new sensor adds to the corpus. Every model makes next year's model better. Classical condition monitoring isn't in an arms race with itself. The machine-learning side is. That's why they'll win. Not because they're smarter. Because they're structurally compounding.
+
+CALLBACK → Remember twelve percent. Hold it just a bit longer.
+
+---
+
+## Slide 9 — Reframe (the corrective slide)
+Visual cue: Small diagram — task-first funnel.
+
+One quick reframe before the hard problems.
+
+Section Two of the paper groups AI not by method but by task. Four of them: optimization, classification, regression, data-structure exploration.
+
+The punchline: pick the task first. Then the toolkit.
+
+> If you have a hammer, every problem is a nail. If you have a transformer, every problem is a sequence. Section Two is the adult in the room saying: classify the task first, then choose the tool. The failure mode you see in every bad paper is somebody who started from a cool method and bent the problem to fit it. This section is the rebuttal — and it should have been Section One.
+
+Small slide, big rule.
+
+*[Move on faster than the previous slide. The short slide between two dense ones is the audience's breath.]*
+
+---
+
+## Slide 10 — Four open problems
+Visual cue: Four quadrants.
+
+Four open problems. The paper is honest about where this gets hard.
+
+One — data scarcity. You can't collect training data for a fault mode that hasn't happened yet. Which is exactly the case you most want to detect.
+
+> It's survivorship bias with higher stakes. The faults you didn't see are the ones that didn't come back. You cannot train a classifier on the class that killed your fleet.
+
+Two — interpretability. A neural-net controller on a grid-connected inverter has to pass IEC sixty-one-five-oh-eight. No certification body has a procedure for certifying a black box.
+
+> Post-hoc explanation methods exist. Certification bodies don't accept post-hoc explanations as proofs. There is today no globally-accepted procedure for SIL-two functional-safety certification of a neural controller on a safety-critical inverter. Zero. Which is why the field's most important research right now is arguably not in machine learning — it's in regulatory theory.
+
+Three — real-time constraints. The controller runs on a microcontroller with a few MIPS between switching interrupts. Not a server GPU.
+
+> A two-hundred-megabyte transformer is beautiful and irrelevant if you can't inference in two microseconds. Model distillation isn't a research topic here — it's a survival constraint. When GPT-2 has one-hundred-seventeen million parameters and your fast-switching loop has forty microseconds, you aren't arguing about architectures. You're arguing about physics.
+
+Four — hybrid physics-plus-data. Combine first-principles models with data-driven components. Interpretability of models, flexibility of learning.
+
+> Physics-Informed Neural Networks. Named, famous, unsolved at production scale. Like fusion: always twenty years away, always the right idea.
+
+> Data scarcity is the crash-proof-plane problem. Interpretability is the black-box-elevator problem. Real-time is the two-microsecond problem. Hybrid physics-plus-data is the unicorn. These aren't weaknesses in the paper — they're the four hills the whole field is trying to climb.
+
+---
+
+## Slide 11 — Critical take (payoff slide)
+Visual cue: Three bullets. Chekhov's gun fires.
+
+← CALLBACK from slide 1.
+
+Three things I'd argue this paper misses or under-weights.
+
+*[Beat. Full eye-line. Audience remembers you promised this. Deliver.]*
+
+One — temporal blind spot.
+
+The taxonomy is twenty twenty-one. The foundation-model wave that followed barely registers.
+
+> In ML dog years, twenty twenty-one is the Pleistocene. ChatGPT didn't exist. Chronos, TimeGPT, TimesFM for time-series forecasting — none of them existed. Transformer-based HDL code generation, control-pretrained backbones — all twenty twenty-four and later. The three-by-four matrix has a fifth column now, and the paper doesn't know yet.
+
+*[Beat.]*
+
+Two — sim-to-real.
+
+Most reinforcement-learning and neural-net controllers in the literature are simulator-trained. Simulators smooth over the nonidealities that bite on real silicon. Deadtime. Parasitic inductance. Current-sensor bandwidth. Electromagnetic interference.
+
+> Robotics has spent a decade on sim-to-real — domain randomization, dynamics randomization, procgen environments. Power electronics has barely started. The rigorous sim-to-real chapter for PE doesn't exist in the literature yet. The paper names the problem. It doesn't weight it. It deserves a chapter, not a paragraph.
+
+*[The biggest pause of the talk goes here, before the third one.]*
+
+Three — and this is my bet.
+
+I'd push back on the seventy-eight-twelve-ten split.
+
+Control dominates today because the problem is clean. Maintenance is structural — sensors are cheaper, fleets are bigger, regulators are starting to require telemetry on grid-connected equipment. The flywheel isn't choice-driven. It's thermodynamic.
+
+> Redo this survey in twenty thirty. Maintenance is thirty percent of the field, not twelve. I'll take the bet publicly. If I'm wrong, you can find me.
+
+*[Two-second hold. This is the line the audience walks out with.]*
+
+---
+
+## Slide 12 — Closing takeaways
+Visual cue: Three short lines.
+
+Three things to leave with.
+
+One. AI in power electronics is here. Not speculative. Deployed. Across the full lifecycle — design, control, maintenance.
+
+Two. Pick your task first, then your method. Optimization, classification, regression, or data exploration. Then metaheuristics, machine learning, fuzzy, or expert.
+
+CALLBACK → If you remember one thing from today, make it the middle one. Task first, tool second. The rest is just which hammer.
+
+Three. The open problems aren't a sign the field is broken.
+
+> They're the reason it's interesting. A field without open problems is a field that has stopped thinking.
+
+*[Beat.]*
+
+Thank you.
+
+*[Hold eye-line with the back of the room for two full seconds. Do not shuffle. Do not apologize. Do not reach for water. Exit posture is forty percent of what the audience takes away about your confidence.]*
+
+---
+
+## Slide 13 — Q&A
+Visual cue: Holding slide — clean.
+
+*[Silence in Q&A is normal. Average first-question delay is about seven seconds. Don't flinch at three.]*
+
+Default seed — if no hand is up after three seconds:
+
+> Happy to go deeper on maintenance. That's the part I'm most bullish about.
+
+Backup seed one — stalled room:
+
+> No takers? Then I'll ask the question I'd ask me — why should a smart-grid class care about certification bottlenecks at inverter OEMs? I have a two-minute answer, if anybody's curious.
+
+Backup seed two — invite opinion:
+
+> If you were starting a company in this space, which of the four open problems would you pick? I have a strong opinion.
+
+Hostile-question move — if a question is dismissive:
+
+*[Never defend. Open.]*
+
+> Yeah, tell me more about what you mean.
+
+Foundation-model follow-up — if someone asks about transformers or foundation models for power electronics:
+
+> Chronos, TimeGPT, TimesFM — all twenty twenty-four, all deployable for time-series forecasting. The question the paper couldn't ask in twenty twenty-one is whether a control-pretrained backbone beats a task-trained net. My intuition: yes, for breadth. No, for latency. Open problem.
+
+Certification follow-up — if someone pushes on IEC sixty-one-five-oh-eight:
+
+> SIL-two certification for a learned controller has no procedure today. My read: the first breakthrough won't come from a cert body — it'll come from a regulator carving out a category for AI-in-loop with hardware backstops. Probably the EU. Ten-year horizon.
+
+The thirty-percent bet follow-up — if someone challenges the maintenance prediction:
+
+> Three things tip it. Sensors are cheaper. Fleets are bigger. Regulators are requiring telemetry on grid-connected equipment. The flywheel is structural, not choice-driven. Redo the math on dataset size by twenty thirty and it's hard to see how maintenance stays at twelve percent.

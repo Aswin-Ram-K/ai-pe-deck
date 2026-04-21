@@ -873,76 +873,419 @@ function Frame({ chapter, idx, total, dense, children, starfield = true, footerL
   );
 }
 
-/* ── Slide 0: Intro ─────────────────────────────────────────────
+/* ── Slide 0: Intro (cosmic plasma star) ───────────────────────
  *
- * Cover slide shown BEFORE slide 1. Deep-black background, a slowly
- * revolving pinkish-purple star in the center with multiple hues
- * drifting inside. On "Start" from the phone remote, the window
- * listens for a `deck-explode` CustomEvent — it adds the
- * `.intro-star--exploding` class to the star, then deck.next() is
- * called in parallel. Scatterboard handles the slide transition;
- * the explosion runs alongside.
+ * Pre-show cover. A plasma sphere hangs alone in pure vacuum,
+ * its surface noise drifting through 5 deck-accent colors (blue,
+ * violet, plum, forest, ink) as it revolves. On "Start" from the
+ * phone remote (or any advance key), the window dispatches
+ * `deck-explode`; the sphere collapses (0.0-0.28s), flashes white
+ * (0.28-0.45s), and ejects 1500 GPU-rendered particles radially
+ * (0.45-1.55s). Aurora + flow-field backdrop fade in underneath
+ * while particles dissipate (1.55-3.10s); a 0.7s hold lets the
+ * universe "breathe" (3.10-3.80s); then deck.next() fires and
+ * Slide 1's scatterboard enter lands on screen by t=4.55s, fully
+ * settled at t=5.00s. Total cosmic-intro budget: 5.0 seconds.
  *
- * The star is built from an SVG <clipPath> in the shape of a 5-point
- * star. Inside that clip we render five large radial-gradient
- * <circle> elements at different hues. Each orbits its own center at
- * a different period, so the hues drift across the star's interior
- * without syncing. A thin outer stroke + drop-shadow gives the
- * whole shape a glow. */
+ * Rendered via Three.js r160 (loaded from unpkg with SRI in
+ * index.html, exposed as window.THREE after the module loads).
+ * The SlideIntro useEffect blocks on a 'three-ready' window
+ * event if THREE isn't available at mount time.
+ *
+ * Shader: custom ShaderMaterial. Fragment blends 5-color tulip
+ * ring by phase (fBm noise + time); ink (#0A0A1F) is treated as
+ * a brightness modulator rather than a dominant fill color —
+ * ink-dominant regions read as cooler stellar spots, not voids.
+ * Corona is a back-facing sphere with additive blending.
+ * Particles use a points ShaderMaterial with per-vertex dir +
+ * speed attributes; all ejecta motion is GPU-side. */
+
+const INTRO_PALETTE = [
+  '#0B3FB5',  // blue
+  '#5B21B6',  // violet
+  '#831843',  // plum (TWEAK_DEFAULTS.accent)
+  '#064E3B',  // forest
+  '#0A0A1F',  // ink (rendered as shadow modulator — see shader)
+];
+
 function SlideIntro() {
-  // 5-point star path (outer radius 100, inner radius 42), centered
-  // at (0,0). Viewbox is -200..200 so we have room for glow + exploding particles.
-  const R_OUT = 100, R_IN = 42;
-  const starPath = (() => {
-    const pts = [];
-    for (let i = 0; i < 10; i++) {
-      const r = i % 2 === 0 ? R_OUT : R_IN;
-      // Start at top (i=0 at angle -90deg)
-      const ang = (Math.PI / 5) * i - Math.PI / 2;
-      pts.push([r * Math.cos(ang), r * Math.sin(ang)]);
-    }
-    return 'M ' + pts.map(p => p.map(n => n.toFixed(2)).join(',')).join(' L ') + ' Z';
-  })();
+  const introRef  = useRef(null);
+  const canvasRef = useRef(null);
 
-  // Internal orbit parameters for each drifting hue-orb. Position +
-  // orbit radius + period are deterministic so the composition is
-  // stable across reloads.
-  const orbs = [
-    { cx:  -25, cy:  -20, r: 90,  color: '#ec4899', period: 14, phase: 0   }, // pink
-    { cx:   30, cy:   10, r: 85,  color: '#c026d3', period: 18, phase: 0.3 }, // magenta-violet
-    { cx:    0, cy:  -35, r: 70,  color: '#a855f7', period: 22, phase: 0.7 }, // violet
-    { cx:  -10, cy:   35, r: 80,  color: '#f9a8d4', period: 16, phase: 0.5 }, // light pink
-    { cx:   25, cy:  -30, r: 75,  color: '#7c3aed', period: 20, phase: 0.2 }, // deep purple
-  ];
-
-  // Particle positions for the explosion — pre-computed so they feel
-  // deterministic. Each gets a random outward angle + speed + delay.
-  const PARTICLE_COUNT = 34;
-  const particles = Array.from({ length: PARTICLE_COUNT }, (_, i) => {
-    const seed = Math.sin(i * 23.17) * 10000;
-    const frac = seed - Math.floor(seed);
-    const ang = (i / PARTICLE_COUNT) * Math.PI * 2 + frac * 0.4;
-    const dist = 260 + (Math.sin(i * 7.13) * 0.5 + 0.5) * 180;   // 260..440
-    const dx = Math.cos(ang) * dist;
-    const dy = Math.sin(ang) * dist;
-    const size = 3 + (Math.sin(i * 3.7) * 0.5 + 0.5) * 5;
-    const delay = (Math.sin(i * 5.1) * 0.5 + 0.5) * 120;         // 0..120ms
-    // Rotate through the star's hue palette.
-    const hue = ['#ec4899', '#c026d3', '#a855f7', '#f9a8d4', '#7c3aed'][i % 5];
-    return { dx, dy, size, delay, hue, i };
-  });
-
-  const introRef = useRef(null);
-
-  // Listen for the phone's START command (dispatched by remote-host.js).
   useEffect(() => {
-    const onExplode = () => {
-      const el = introRef.current;
-      if (!el) return;
-      el.classList.add('intro-star--exploding');
+    const mount = canvasRef.current;
+    const slideEl = introRef.current;
+    if (!mount || !slideEl) return;
+
+    let disposed = false;
+    let teardown = () => {};
+
+    const boot = () => {
+      if (disposed) return;
+      const THREE = window.THREE;
+      if (!THREE) return;  // still waiting; rebind below
+
+      const DPR = Math.min(window.devicePixelRatio || 1, 2);
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
+      camera.position.z = 4.2;
+
+      const renderer = new THREE.WebGLRenderer({
+        alpha: true, antialias: true, powerPreference: 'high-performance',
+      });
+      renderer.setPixelRatio(DPR);
+      renderer.setClearColor(0x000000, 0);
+      const resize = () => {
+        const w = mount.clientWidth || 1920;
+        const h = mount.clientHeight || 1080;
+        renderer.setSize(w, h, false);
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+      };
+      resize();
+      mount.appendChild(renderer.domElement);
+      Object.assign(renderer.domElement.style, {
+        width: '100%', height: '100%', display: 'block',
+      });
+
+      /* ─── Plasma sphere ─── */
+      const paletteVec3 = INTRO_PALETTE.map(hex => new THREE.Color(hex));
+      const uniforms = {
+        iTime:     { value: 0 },
+        uCollapse: { value: 0 },
+        uBurst:    { value: 0 },
+        uPalette:  { value: paletteVec3 },
+      };
+
+      const sphereGeom = new THREE.IcosahedronGeometry(0.5, 48);
+      const sphereMat = new THREE.ShaderMaterial({
+        uniforms,
+        transparent: false,
+        vertexShader: /* glsl */`
+          varying vec3 vPos;
+          varying vec3 vNormal;
+          varying vec3 vWorldPos;
+          void main() {
+            vPos = position;
+            vNormal = normalize(normalMatrix * normal);
+            vec4 wp = modelMatrix * vec4(position, 1.0);
+            vWorldPos = wp.xyz;
+            gl_Position = projectionMatrix * viewMatrix * wp;
+          }
+        `,
+        fragmentShader: /* glsl */`
+          precision highp float;
+          uniform float iTime;
+          uniform float uCollapse;
+          uniform float uBurst;
+          uniform vec3  uPalette[5];
+          varying vec3 vPos;
+          varying vec3 vNormal;
+          varying vec3 vWorldPos;
+
+          vec3 hash3(vec3 p) {
+            p = vec3(
+              dot(p, vec3(127.1, 311.7, 74.7)),
+              dot(p, vec3(269.5, 183.3, 246.1)),
+              dot(p, vec3(113.5, 271.9, 124.6))
+            );
+            return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+          }
+          float noise3(vec3 p) {
+            vec3 i = floor(p);
+            vec3 f = fract(p);
+            vec3 u = f*f*(3.0-2.0*f);
+            return mix(mix(mix(dot(hash3(i+vec3(0,0,0)), f-vec3(0,0,0)),
+                               dot(hash3(i+vec3(1,0,0)), f-vec3(1,0,0)), u.x),
+                           mix(dot(hash3(i+vec3(0,1,0)), f-vec3(0,1,0)),
+                               dot(hash3(i+vec3(1,1,0)), f-vec3(1,1,0)), u.x), u.y),
+                       mix(mix(dot(hash3(i+vec3(0,0,1)), f-vec3(0,0,1)),
+                               dot(hash3(i+vec3(1,0,1)), f-vec3(1,0,1)), u.x),
+                           mix(dot(hash3(i+vec3(0,1,1)), f-vec3(0,1,1)),
+                               dot(hash3(i+vec3(1,1,1)), f-vec3(1,1,1)), u.x), u.y), u.z);
+          }
+          float fbm(vec3 p) {
+            float f = 0.0;
+            f += 0.50 * noise3(p);
+            f += 0.25 * noise3(p * 2.07);
+            f += 0.12 * noise3(p * 4.13);
+            return f;
+          }
+
+          // 5-color ring sampled by phase (0..1), wraps.
+          vec3 tulipRing(float phase) {
+            phase = fract(phase) * 5.0;
+            float t = fract(phase);
+            int idx = int(floor(phase));
+            vec3 c0, c1;
+            if (idx == 0)      { c0 = uPalette[0]; c1 = uPalette[1]; }
+            else if (idx == 1) { c0 = uPalette[1]; c1 = uPalette[2]; }
+            else if (idx == 2) { c0 = uPalette[2]; c1 = uPalette[3]; }
+            else if (idx == 3) { c0 = uPalette[3]; c1 = uPalette[4]; }
+            else               { c0 = uPalette[4]; c1 = uPalette[0]; }
+            return mix(c0, c1, t);
+          }
+
+          void main() {
+            // Surface noise + time drift
+            float n = fbm(vPos * 2.3 + vec3(iTime * 0.12, iTime * 0.08, -iTime * 0.10));
+            float phase = n * 0.8 + iTime * 0.045;
+            vec3 color = tulipRing(phase);
+
+            // Ink treatment: where the sampled color is very dark
+            // (i.e., phase is near ink band), dim it further so it
+            // reads as a cooler starspot rather than a pure void.
+            // Ink band is around phase = 4/5 = 0.8 in the ring.
+            float inkness = smoothstep(0.0, 0.3, 1.0 - length(color - vec3(0.04, 0.04, 0.12)));
+            color = mix(color, color * 0.55 + vec3(0.015, 0.015, 0.035), inkness);
+
+            // Fresnel rim — thin warm bloom at the silhouette
+            vec3 viewDir = normalize(cameraPosition - vWorldPos);
+            float fres = pow(1.0 - abs(dot(vNormal, viewDir)), 2.6);
+            vec3 rim = vec3(1.0, 0.76, 0.62) * fres * 0.65;
+            color += rim;
+
+            // Subtle surface hotspot flicker
+            float flicker = fbm(vPos * 6.0 + iTime * 0.5) * 0.15 + 0.85;
+            color *= flicker;
+
+            // Collapse — colors lift toward white-hot; sphere brighter
+            vec3 hotCore = vec3(1.0, 0.86, 0.72);
+            color = mix(color, hotCore * 1.3, uCollapse * 0.9);
+
+            // Burst — saturate white (HDR-ish, clamped by tonemap at render)
+            color = mix(color, vec3(1.8), uBurst);
+
+            gl_FragColor = vec4(color, 1.0);
+          }
+        `,
+      });
+      const sphere = new THREE.Mesh(sphereGeom, sphereMat);
+      scene.add(sphere);
+
+      /* ─── Corona (back-facing, additive blend) ─── */
+      const coronaGeom = new THREE.IcosahedronGeometry(0.70, 24);
+      const coronaMat = new THREE.ShaderMaterial({
+        uniforms,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.BackSide,
+        vertexShader: /* glsl */`
+          varying vec3 vNormal;
+          varying vec3 vWorldPos;
+          void main() {
+            vNormal = normalize(normalMatrix * normal);
+            vec4 wp = modelMatrix * vec4(position, 1.0);
+            vWorldPos = wp.xyz;
+            gl_Position = projectionMatrix * viewMatrix * wp;
+          }
+        `,
+        fragmentShader: /* glsl */`
+          precision highp float;
+          uniform float iTime;
+          uniform float uCollapse;
+          uniform float uBurst;
+          uniform vec3  uPalette[5];
+          varying vec3 vNormal;
+          varying vec3 vWorldPos;
+          void main() {
+            vec3 viewDir = normalize(cameraPosition - vWorldPos);
+            float fres = pow(1.0 - abs(dot(vNormal, viewDir)), 1.8);
+            // Corona hue drifts through plum/violet (warmer end of palette)
+            float t = 0.5 + 0.5 * sin(iTime * 0.35);
+            vec3 tint = mix(uPalette[1], uPalette[2], t) * 1.2;
+            float a = fres * 0.55 * (1.0 - uBurst);  // corona vanishes at burst
+            gl_FragColor = vec4(tint, a);
+          }
+        `,
+      });
+      const corona = new THREE.Mesh(coronaGeom, coronaMat);
+      scene.add(corona);
+
+      /* ─── Particle ejecta (1500 points, GPU-driven) ─── */
+      const PCOUNT = 1500;
+      const SPHERE_R = 0.5;  // must match sphereGeom radius
+      const pGeom = new THREE.BufferGeometry();
+      const pPositions = new Float32Array(PCOUNT * 3); // origin baseline
+      const pDirs      = new Float32Array(PCOUNT * 3); // unit outward
+      const pColors    = new Float32Array(PCOUNT * 3);
+      const pSpeeds    = new Float32Array(PCOUNT);
+      for (let i = 0; i < PCOUNT; i++) {
+        // Uniform sphere direction (Marsaglia method)
+        let u = Math.random() * 2 - 1;
+        let th = Math.random() * Math.PI * 2;
+        let r = Math.sqrt(1 - u * u);
+        const dx = r * Math.cos(th), dy = r * Math.sin(th), dz = u;
+        pDirs[i*3  ] = dx; pDirs[i*3+1] = dy; pDirs[i*3+2] = dz;
+        pPositions[i*3] = dx * SPHERE_R;
+        pPositions[i*3+1] = dy * SPHERE_R;
+        pPositions[i*3+2] = dz * SPHERE_R;
+        const c = paletteVec3[i % 5];
+        pColors[i*3  ] = c.r; pColors[i*3+1] = c.g; pColors[i*3+2] = c.b;
+        pSpeeds[i] = 1.5 + Math.random() * 2.2;  // slightly slower to match smaller sphere
+      }
+      pGeom.setAttribute('position', new THREE.BufferAttribute(pPositions, 3));
+      pGeom.setAttribute('aDir',     new THREE.BufferAttribute(pDirs, 3));
+      pGeom.setAttribute('aColor',   new THREE.BufferAttribute(pColors, 3));
+      pGeom.setAttribute('aSpeed',   new THREE.BufferAttribute(pSpeeds, 1));
+
+      const pMat = new THREE.ShaderMaterial({
+        uniforms: {
+          uTime:      { value: 0 },
+          uBurstTime: { value: -1 },  // -1 = inactive
+          uDPR:       { value: DPR },
+        },
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        vertexShader: /* glsl */`
+          attribute vec3 aDir;
+          attribute vec3 aColor;
+          attribute float aSpeed;
+          uniform float uTime;
+          uniform float uBurstTime;
+          uniform float uDPR;
+          varying vec3 vColor;
+          varying float vAlpha;
+          void main() {
+            vColor = aColor;
+            float t = (uBurstTime < 0.0) ? -1.0 : (uTime - uBurstTime);
+            vec3 pos;
+            if (t < 0.0) {
+              pos = aDir * 0.5;    // resting on sphere surface (radius matches sphereGeom)
+              vAlpha = 0.0;
+            } else {
+              // Expand outward from sphere surface; decelerate slightly as they fly
+              float dist = t * aSpeed * (1.0 - 0.3 * smoothstep(0.0, 1.1, t));
+              pos = aDir * (0.5 + dist);
+              vAlpha = (1.0 - smoothstep(0.2, 1.1, t)) * smoothstep(0.0, 0.06, t);
+            }
+            vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+            gl_Position = projectionMatrix * mv;
+            gl_PointSize = (3.5 + (1.0 - smoothstep(0.0, 1.1, t)) * 5.0) * uDPR;
+          }
+        `,
+        fragmentShader: /* glsl */`
+          precision highp float;
+          varying vec3 vColor;
+          varying float vAlpha;
+          void main() {
+            if (vAlpha <= 0.001) discard;
+            vec2 uv = gl_PointCoord - 0.5;
+            float d = length(uv);
+            if (d > 0.5) discard;
+            float a = smoothstep(0.5, 0.0, d) * vAlpha;
+            // Brighten color for additive
+            gl_FragColor = vec4(vColor * 1.6 + vec3(0.3), a);
+          }
+        `,
+      });
+      const particles = new THREE.Points(pGeom, pMat);
+      scene.add(particles);
+
+      /* ─── State machine ─── */
+      // phase: 'idle' | 'collapsing' | 'flashing' | 'ejecting' | 'dissipating'
+      let phase = 'idle';
+      let burstAt = -1;  // performance.now() ms when burst started
+
+      const triggerExplode = () => {
+        if (phase !== 'idle') return;  // idempotent
+        phase = 'collapsing';
+        burstAt = performance.now();
+        pMat.uniforms.uBurstTime.value = burstAt / 1000;
+        // Add class to root so CSS tagline fade triggers
+        slideEl.classList.add('intro-exploding');
+      };
+      window.addEventListener('deck-explode', triggerExplode);
+
+      /* ─── Animation loop ─── */
+      const clock = new THREE.Clock();
+      let raf = 0;
+      const tick = () => {
+        const elapsed = clock.getElapsedTime();
+        uniforms.iTime.value = elapsed;
+        pMat.uniforms.uTime.value = elapsed;
+
+        // Sphere rotation — slow Y-axis revolve, subtle X wobble
+        sphere.rotation.y  += 0.0018;
+        sphere.rotation.x   = Math.sin(elapsed * 0.13) * 0.06;
+        corona.rotation.y   = sphere.rotation.y * 0.6;
+
+        if (phase !== 'idle') {
+          const t = (performance.now() - burstAt) / 1000;  // seconds since burst
+          // Pacing windows (must match styles.css / remote-host.js — see top comment)
+          if (t < 0.28) {
+            // Collapse
+            uniforms.uCollapse.value = t / 0.28;
+            const s = 1.0 - 0.45 * (t / 0.28);
+            sphere.scale.setScalar(s);
+            corona.scale.setScalar(s);
+            phase = 'collapsing';
+          } else if (t < 0.45) {
+            // Flash
+            uniforms.uCollapse.value = 1.0;
+            uniforms.uBurst.value = (t - 0.28) / 0.17;
+            phase = 'flashing';
+          } else if (t < 1.55) {
+            // Ejecta expansion; sphere vanishes
+            uniforms.uBurst.value = 1.0;
+            const s = Math.max(0.0, 0.55 - (t - 0.45) * 2.0);
+            sphere.scale.setScalar(s);
+            corona.scale.setScalar(s);
+            phase = 'ejecting';
+          } else {
+            // Dissipating — everything fades. Trigger universe emergence:
+            // aurora + flow-field fade in underneath while we wait for
+            // deck.next() at t=3.8s (fired by remote-host.js).
+            if (phase !== 'dissipating') {
+              sphere.visible = false;
+              corona.visible = false;
+              document.body.classList.remove('intro-mode');
+              document.body.classList.add('universe-settling');
+            }
+            phase = 'dissipating';
+          }
+        }
+
+        renderer.render(scene, camera);
+        raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
+
+      /* ─── Resize handling ─── */
+      const ro = new ResizeObserver(resize);
+      ro.observe(mount);
+
+      /* ─── Teardown ─── */
+      teardown = () => {
+        cancelAnimationFrame(raf);
+        window.removeEventListener('deck-explode', triggerExplode);
+        ro.disconnect();
+        sphereGeom.dispose(); sphereMat.dispose();
+        coronaGeom.dispose(); coronaMat.dispose();
+        pGeom.dispose();      pMat.dispose();
+        renderer.dispose();
+        if (renderer.domElement.parentNode) {
+          renderer.domElement.parentNode.removeChild(renderer.domElement);
+        }
+      };
     };
-    window.addEventListener('deck-explode', onExplode);
-    return () => window.removeEventListener('deck-explode', onExplode);
+
+    // THREE may already be loaded (fast path) or still coming (wait for event)
+    if (window.THREE) {
+      boot();
+    } else {
+      const onReady = () => { boot(); };
+      window.addEventListener('three-ready', onReady, { once: true });
+      const prevTeardown = teardown;
+      teardown = () => {
+        window.removeEventListener('three-ready', onReady);
+        prevTeardown();
+      };
+    }
+
+    return () => { disposed = true; teardown(); };
   }, []);
 
   return (
@@ -956,85 +1299,31 @@ function SlideIntro() {
            display: 'flex', alignItems: 'center', justifyContent: 'center',
            flexDirection: 'column',
          }}>
-      {/* The star — large centered SVG */}
-      <div className="intro-star" style={{ position: 'relative', width: 520, height: 520 }}>
-        <svg width="520" height="520" viewBox="-200 -200 400 400"
-             style={{ overflow: 'visible', display: 'block' }}>
-          <defs>
-            <clipPath id="intro-star-clip">
-              <path d={starPath} />
-            </clipPath>
-            {/* Soft outer glow for the star outline */}
-            <filter id="intro-star-glow" x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur stdDeviation="6" result="blur" />
-              <feMerge>
-                <feMergeNode in="blur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-          </defs>
+      <div ref={canvasRef}
+           className="intro-canvas-mount"
+           style={{
+             position: 'absolute', inset: 0,
+             pointerEvents: 'none',
+           }} />
 
-          {/* Revolving group — rotates the whole star body (the clipped
-              hue orbs go with it, so the silhouette revolves). */}
-          <g className="intro-star__spin">
-            {/* Internal hue orbs, clipped to star. Each orb orbits
-                around its own center via CSS transform. */}
-            <g clipPath="url(#intro-star-clip)">
-              <rect x="-200" y="-200" width="400" height="400" fill="#1a0a1f" />
-              {orbs.map((o, i) => (
-                <circle key={i}
-                        className={`intro-orb intro-orb--${i}`}
-                        cx={o.cx} cy={o.cy} r={o.r}
-                        fill={o.color}
-                        opacity="0.75"
-                        style={{ transformOrigin: `${o.cx}px ${o.cy}px` }} />
-              ))}
-            </g>
-
-            {/* Star outline — subtle accent stroke with drop-shadow glow */}
-            <path d={starPath}
-                  fill="none"
-                  stroke="rgba(249,168,212,0.75)"
-                  strokeWidth="1.5"
-                  strokeLinejoin="round"
-                  filter="url(#intro-star-glow)" />
-          </g>
-
-          {/* Explosion particles — hidden until .intro-star--exploding
-              is toggled on the parent. Each CSS variable drives the
-              final offset so the JS just adds the class. */}
-          <g className="intro-particles">
-            {particles.map(p => (
-              <circle key={p.i}
-                      cx="0" cy="0" r={p.size}
-                      fill={p.hue}
-                      className="intro-particle"
-                      style={{
-                        '--dx': `${p.dx.toFixed(1)}px`,
-                        '--dy': `${p.dy.toFixed(1)}px`,
-                        '--pd': `${p.delay.toFixed(0)}ms`,
-                      }} />
-            ))}
-          </g>
-        </svg>
-      </div>
-
-      {/* Tagline beneath the star. Faint, won't fight with the star. */}
+      {/* Tagline beneath the star */}
       <div className="intro-tagline"
            style={{
-             marginTop: 40,
+             position: 'relative',
+             marginTop: 'auto', marginBottom: '7%',
              fontFamily: 'JetBrains Mono, monospace',
              fontSize: 14, letterSpacing: '0.3em',
              textTransform: 'uppercase',
-             color: 'rgba(249,168,212,0.5)',
+             color: 'rgba(200, 180, 220, 0.55)',
              textAlign: 'center',
              userSelect: 'none',
+             zIndex: 2,
            }}>
         AI in Power Electronics
         <div style={{
           marginTop: 10,
           fontSize: 11, letterSpacing: '0.22em',
-          color: 'rgba(200,200,212,0.3)',
+          color: 'rgba(200, 200, 220, 0.28)',
         }}>
           Tap start on the remote
         </div>
@@ -2567,8 +2856,11 @@ if (tweaksRoot) ReactDOM.createRoot(tweaksRoot).render(<TweaksHost />);
     document.body.classList.toggle('intro-mode', isIntro);
 
     // Leaving intro — trigger the star explosion regardless of source
-    // (phone START, arrow key, space, etc.). SlideIntro's onExplode
-    // handler is idempotent (adds a class that's already there = noop).
+    // (phone START, arrow key, space, etc.). SlideIntro's triggerExplode
+    // is idempotent. Keyboard path is a fast-skip (slide 1 already active
+    // by now); the cinematic path comes from the phone START which calls
+    // deck.next() AFTER a 3.8s delay (remote-host.js), giving the shader
+    // state machine time to play before the scatterboard transition.
     const wasIntro = previousSlide?.getAttribute('data-label') === 'Intro';
     if (wasIntro && !sameSlide) {
       window.dispatchEvent(new CustomEvent('deck-explode'));

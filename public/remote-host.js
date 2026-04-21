@@ -22,6 +22,12 @@
  *   Deck  → Phone:  { type: 'state', index, total, label }
  * ═══════════════════════════════════════════════════════════════ */
 
+/* ─── Pacing constants ─────────────────────────────────────────────
+ * Retuneable at QA time without touching other files.
+ * ───────────────────────────────────────────────────────────── */
+const INTRO_EXPLODE_TO_NEXT_MS = 3800;  // start tap → deck.next() fires
+const INTRO_TOTAL_BUDGET_MS    = 5000;  // start tap → slide 1 fully arrived
+
 (() => {
   const deck = document.querySelector('deck-stage');
   if (!deck) return;
@@ -183,20 +189,27 @@
         break;
       case 'hello': sendState(); break;
 
-      // Intro START — fire the explosion event on the intro slide,
-      // then advance to slide 1 after a brief delay. The explosion
-      // CSS runs over ~900 ms; our scatterboard transition runs in
-      // parallel so the particles fly over slide 1's entrance.
+      // Intro START — fire the cosmic-intro sequence and delay the
+      // scatterboard transition until after the big-bang + universe-
+      // settle beat. Pacing grid (must match SlideIntro's state
+      // machine in deck.jsx and aurora transitions in styles.css):
+      //
+      //   0.00-0.28s  collapse  (sphere shrinks, white-hot)
+      //   0.28-0.45s  flash     (white-out)
+      //   0.45-1.55s  ejecta    (1500 particles expand)
+      //   1.55-3.10s  settle    (particles fade; aurora breathes in)
+      //   3.10-3.80s  hold      (universe alive, pre-slide beat)
+      //   3.80-4.55s  scatter   (deck.next() fires; slide-1 enter)
+      //   4.55-5.00s  arrived   (.deck-arrived pin; fully settled)
+      //
+      // Total cosmic-intro budget: 5.0 seconds.
       case 'start': {
         // Only valid when we're on the intro (don't misfire from other slides)
         const active = document.querySelector('deck-stage > section[data-deck-active]');
         const onIntro = active?.getAttribute('data-label') === 'Intro';
         if (!onIntro) { deck.next && deck.next(); break; }
-        // Tell the intro component to kick off its exit animation.
         window.dispatchEvent(new CustomEvent('deck-explode'));
-        // Advance to slide 1 in parallel — scatterboard overlaps the
-        // explosion so the two blend into one transition.
-        setTimeout(() => { deck.next && deck.next(); }, 0);
+        setTimeout(() => { deck.next && deck.next(); }, INTRO_EXPLODE_TO_NEXT_MS);
         break;
       }
     }

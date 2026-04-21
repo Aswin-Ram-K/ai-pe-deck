@@ -106,11 +106,19 @@ app/
   - `total` includes the intro (s0..s13 = 14). Phone subtracts 1 to display `N/13`.
   - Static peer ID is **not private** — the PeerJS public broker is signaling-only. Anyone who knows the exact string could connect. Acceptable risk for a 15-min classroom demo; change the suffix if you reuse the engine.
 
-- **Intro slide (s0)** is a pre-show cover outside the numbered sequence:
-  - Body gets `.intro-mode` class while active → aurora + flow-field fade to `opacity:0`; star sits on pure black.
-  - Phone's Next button morphs to "START" when `label === 'Intro'`; tapping sends `{action:'start'}`.
-  - `remote-host.js` dispatches `window.CustomEvent('deck-explode')` → `SlideIntro`'s `useEffect` listener adds `.intro-star--exploding` to the root → 900 ms CSS burst animation fires in parallel with scatterboard transition to s1.
-  - Fallback: if user presses ArrowRight/Space to leave intro, `deck.jsx`'s slidechange handler also dispatches `deck-explode`. The handler is idempotent.
+- **Intro slide (s0) — cosmic plasma star via Three.js r160**, outside the numbered sequence:
+  - Three.js r160 loaded from unpkg as ES module with SRI (modulepreload + inline `<script type="module">`), exposed as `window.THREE`. SlideIntro waits on `three-ready` event if mount races the load.
+  - Plasma sphere: `IcosahedronGeometry` + `ShaderMaterial` with custom GLSL. Fragment blends a 5-color "tulip ring" (the deck's 5 accent hexes verbatim: blue `#0B3FB5` · violet `#5B21B6` · plum `#831843` · forest `#064E3B` · ink `#0A0A1F`) by fBm-noise phase + time. Ink treated as a brightness modulator ("stellar shadow"), not a dominant fill — prevents periodic blackout bands.
+  - Corona: back-facing sphere with additive blending, Fresnel-driven opacity, hue drifts between violet and plum on a 0.35 rad/s cycle.
+  - Particle ejecta: 1500 GPU-driven points via `ShaderMaterial` with per-vertex `aDir` / `aColor` / `aSpeed` attributes. `uBurstTime` uniform triggers ejecta; all expansion math is GPU-side.
+  - **State machine** inside SlideIntro's RAF loop, pacing must match `remote-host.js` and `styles.css`:
+    - `idle` → `collapsing` (0.0–0.28s, sphere scales down, `uCollapse` 0→1)
+    - → `flashing` (0.28–0.45s, `uBurst` 0→1, white-out)
+    - → `ejecting` (0.45–1.55s, particles expand, sphere vanishes)
+    - → `dissipating` (1.55s+, JS removes `body.intro-mode` + adds `body.universe-settling` → aurora/flow-field fade in via CSS over 2.8s)
+  - **Phone-START path** dispatches `deck-explode` AND schedules `deck.next()` at `INTRO_EXPLODE_TO_NEXT_MS` (3800ms) → scatterboard enter lands at t=4.55s, Slide 1 fully arrived at t=5.00s. Total cosmic-intro budget: **5.0 seconds**.
+  - **Keyboard advance (ArrowRight/Space)** is a fast-skip path — scatterboard fires immediately, `deck-explode` still dispatched by slidechange handler but SlideIntro is unmounting so the visual is skipped. Intentional: phone gives cinematic; keyboard gives quick-skip for dev.
+  - Pacing constants at top of `remote-host.js`: `INTRO_EXPLODE_TO_NEXT_MS` (3800) + `INTRO_TOTAL_BUDGET_MS` (5000). Retunable without refactor.
 
 - **`TOTAL = 13`** (in `deck.jsx` line 2260) is the number of numbered slides shown in the chrome (01/13..13/13). Do not change when adding intro-style pre/post-show slides — they sit outside the numbered sequence.
 

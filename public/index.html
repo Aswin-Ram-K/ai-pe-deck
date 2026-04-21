@@ -23,6 +23,20 @@
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 
+<!-- Three.js r160 (pinned + SRI) for the cosmic intro plasma shader.
+     Preload validates SRI, then the module script below imports the
+     already-fetched module and assigns window.THREE so the Babel-eval'd
+     deck.jsx (which can't use import statements directly) can consume it. -->
+<link rel="modulepreload"
+      href="https://unpkg.com/three@0.160.0/build/three.module.js"
+      integrity="sha384-61S/Nu32S3E5+n+KpCOTb2eRYps6fVKm+9Gz1QBvSePFthb46f063Aa/qe/lykFZ"
+      crossorigin="anonymous">
+<script type="module">
+  import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+  window.THREE = THREE;
+  window.dispatchEvent(new CustomEvent('three-ready'));
+</script>
+
 <!-- deck-stage web component -->
 <script src="deck-stage.js"></script>
 

@@ -532,25 +532,45 @@ deck-stage > section[data-deck-active] {
  * via the phone remote's Start button.
  * ─────────────────────────────────────────────────────────────── */
 
-/* While the intro is the active slide, fade body-level backdrops
- * (aurora + flow field) so the star reads on a truly-black field.
- * Toggled by JS on slidechange. */
+/* While the intro is the active slide (or the universe is mid-settle
+ * from the big bang), the body-level backdrops are hidden so the
+ * plasma sphere (and the ejecta that follows) read on a truly-black
+ * vacuum. Toggled by JS on slidechange + from SlideIntro's state
+ * machine at t=1.55s (ejecta→settle transition) which removes
+ * `.intro-mode` and adds `.universe-settling`. The longer 2800ms
+ * fade-in on :not(.intro-mode) lets the aurora breathe in across
+ * the 1.55s-3.10s window, ready before the pre-slide hold beat. */
 body.intro-mode .aurora-backdrop,
 body.intro-mode #bg-flowfield {
   opacity: 0 !important;
   transition: opacity 900ms ease-out;
 }
-/* Leaving the intro: the background reveals back in.
- * Longer transition so it fades in over the first new slide's
- * entrance, feeling like the world awakens as the star dissipates. */
 body:not(.intro-mode) .aurora-backdrop,
 body:not(.intro-mode) #bg-flowfield {
-  transition: opacity 1400ms ease-in;
+  transition: opacity 2800ms ease-in;
 }
 
 /* Intro slide container — pure black, no aurora blend */
 .intro-slide {
   background: #000 !important;
+}
+
+/* Canvas mount for Three.js — fills slide, no pointer capture */
+.intro-canvas-mount {
+  position: absolute; inset: 0;
+  pointer-events: none;
+}
+.intro-canvas-mount canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
+
+/* Tagline fades out when the big bang fires (class added by SlideIntro
+ * state machine on `deck-explode`). 600ms ease-out so it clears during
+ * the collapse/flash windows. */
+.intro-exploding .intro-tagline {
+  animation: introTaglineFade 600ms ease-out forwards;
 }
 
 /* The star revolves slowly as its resting state */

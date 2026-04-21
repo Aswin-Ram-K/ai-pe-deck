@@ -78,8 +78,12 @@ was the original control plane and shipped in commits through
 - **Intro-mode morph**: when the deck reports `label: 'Intro'`, the
   phone's Next button becomes a pulsing START. Tapping dispatches
   `{action: 'start'}` → deck fires `deck-explode` CustomEvent →
-  SlideIntro's particle burst runs in parallel with the
-  scatterboard transition to slide 1.
+  SlideIntro's cosmic-intro state machine runs (collapse →
+  flash → ejecta → universe-settle → hold → scatterboard enter)
+  over a **5.0 s** pacing budget; `deck.next()` is delayed by
+  `INTRO_EXPLODE_TO_NEXT_MS` (3800 ms) so the shader sequence
+  plays before slide 1's scatterboard enter. Rendered via
+  Three.js r160 (loaded from unpkg with SRI).
 
 **Why this won** over voice control: voice required a single-device
 mic on the laptop, fought presenter-to-audience speech, and needed
@@ -143,4 +147,5 @@ local JSON fetch of `speaker-notes.json`.
 - 2026-04-20: Published to GitHub (pending repo creation).
 - 2026-04-20: Voice + reveal-group systems removed (`138f0b3`) in favor of a phone-remote control plane. PeerJS-based pairing via QR (`853172a`), then simplified to static peer ID + auto-start (`917d10a`).
 - 2026-04-21: Pre-show intro slide (s0) added — revolving SVG star with drifting hue orbs, 34-particle explosion on phone-remote START. Aurora/flow-field fade to black during intro-mode.
+- 2026-04-21: Cosmic intro v2 — replaces SVG star with **Three.js r160 plasma sphere** (custom ShaderMaterial + 5-color tulip ring + 1500-particle GPU ejecta). Pacing extended to **5.0 s** total (collapse 0.28s → flash 0.17s → ejecta 1.10s → universe-settle 1.55s → hold 0.70s → scatterboard enter 0.75s → arrived 0.45s). Aurora backdrop expanded to 5 orbs (one per deck accent) with breathing pulse + gust-rhythm flow-field ("living universe"). Shader uses 5 accent hexes verbatim (blue/violet/plum/forest/ink), with ink treated as a brightness modulator rather than a dominant fill color to prevent periodic blackouts.
 - 2026-04-21: Full audit (log `022-ai-pe-deck-audit-2026-04-21`) → added `package-lock.json`, pinned Node 20.18, SRI-hashed PeerJS, tightened stale voice-refs. `CLAUDE.md` initialized at project root.

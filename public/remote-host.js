@@ -25,8 +25,8 @@
 /* ─── Pacing constants ─────────────────────────────────────────────
  * Retuneable at QA time without touching other files.
  * ───────────────────────────────────────────────────────────── */
-const INTRO_EXPLODE_TO_NEXT_MS = 13800;  // start tap → deck.next() fires (end of 1.0s settle hold)
-const INTRO_TOTAL_BUDGET_MS    = 15600;  // start tap → slide 1 fully arrived (+1.8s first-slide enter)
+const INTRO_EXPLODE_TO_NEXT_MS = 12600;  // start tap → deck.next() fires (end of 1.0s settle hold)
+const INTRO_TOTAL_BUDGET_MS    = 14400;  // start tap → slide 1 fully arrived (+1.8s first-slide enter)
 
 (() => {
   const deck = document.querySelector('deck-stage');
@@ -194,17 +194,17 @@ const INTRO_TOTAL_BUDGET_MS    = 15600;  // start tap → slide 1 fully arrived 
       // eruption + settle beat. Pacing grid (must match SlideIntro's
       // state machine in deck.jsx and aurora transitions in styles.css):
       //
-      //   0.00 -  3.50s  tensioning  (slow pulse 0.5 → 2Hz)
-      //   3.50 -  6.00s  intensify   (pulse 2 → 18Hz, past threshold)
-      //   6.00 -  6.55s  implode     (sphere collapses to dense point)
-      //   6.55 -  7.65s  held        (singularity, subtle tremor)
-      //   7.65 -  7.90s  flash       (white-out; particles released)
-      //   7.90 - 10.10s  ejecta      (1500 particles radiate out)
-      //  10.10 - 12.80s  erupt       (aurora materializes with force)
-      //  12.80 - 13.80s  settled     (universe alive, pre-slide hold)
-      //  13.80 - 15.60s  enter       (deck.next() fires; slow 1.8s enter)
+      //   0.00 -  3.50s  tensioning  (pulse wave 0.8 → 2 Hz)
+      //   3.50 -  6.00s  intensify   (pulse 2 → 18 Hz, past threshold)
+      //   6.00 -  6.35s  implode     (snappier 0.35s, particles converge)
+      //   6.35 -  6.45s  held        (0.10s singularity — flash beat only)
+      //   6.45 -  6.70s  flash       (white-out; particles released)
+      //   6.70 -  8.90s  ejecta      (6000 particles radiate from origin)
+      //   8.90 - 11.60s  erupt       (aurora materializes with force)
+      //  11.60 - 12.60s  settled     (universe alive, pre-slide hold)
+      //  12.60 - 14.40s  enter       (deck.next() fires; slow 1.8s enter)
       //
-      // Total cosmic-intro budget: 15.6 seconds (under the 20s cap).
+      // Total cosmic-intro budget: 14.4 seconds (under the 20s cap).
       case 'start': {
         // Only valid when we're on the intro (don't misfire from other slides)
         const active = document.querySelector('deck-stage > section[data-deck-active]');

@@ -1244,12 +1244,12 @@ function SlideIntro() {
             }
             vec4 mv = modelViewMatrix * vec4(pos, 1.0);
             gl_Position = projectionMatrix * mv;
-            // Idle size 5.5 for nebular cloud density. During ejecta,
-            // particles shrink to minute "light-like" specks — starts at
-            // 3.0 (already smaller than idle, for a clean release), tapers
-            // to 1.5 at full expansion so the explosion trails off as a
-            // distant starfield rather than chunky fragments.
-            float baseSize = (t < 0.0) ? 5.5 : (3.0 - 1.5 * smoothstep(0.0, 2.2, t));
+            // Idle size 5.5 for nebular cloud density; shrinks to 2.0 as
+            // particles converge so the singularity reads as a tight
+            // bright point, not a chunky dot. During ejecta, particles
+            // become minute "light-like" specks (3.0 → 1.5).
+            float idleSize = 5.5 - 3.5 * uCollapse;
+            float baseSize = (t < 0.0) ? idleSize : (3.0 - 1.5 * smoothstep(0.0, 2.2, t));
             gl_PointSize = baseSize * uDPR;
           }
         `,
@@ -1329,35 +1329,35 @@ function SlideIntro() {
             pMat.uniforms.uPulseAmp.value  = 0.08 * (1.0 - p * 0.2);  // slight reduction
             pMat.uniforms.uPulseFreq.value = 2.0 + 16.0 * p;          // 2 → 18 Hz
             phase = 'intensifying';
-          } else if (t < 6.55) {
-            // Phase 3 — Imploding. Pulse dies. Collapse pulls every
-            // particle in the cloud to origin.
+          } else if (t < 6.35) {
+            // Phase 3 — Imploding (0.35s, snappier). Pulse dies.
+            // Every particle pulled to origin.
             uniforms.uTension.value = 1.0;
-            const p = (t - 6.0) / 0.55;
+            const p = (t - 6.0) / 0.35;
             const ease = p * p * (3.0 - 2.0 * p);  // smoothstep curve
             uniforms.uCollapse.value = ease;
             pMat.uniforms.uCollapse.value = ease;
             pMat.uniforms.uPulseAmp.value = 0.08 * (1.0 - ease);
             phase = 'imploding';
-          } else if (t < 7.65) {
-            // Phase 4 — Held singularity. All particles compressed at
-            // the center; dense bright point. Subtle tremor.
+          } else if (t < 6.45) {
+            // Phase 4 — Held singularity (0.10s — just a flash beat, not
+            // a static frame). Dense bright point briefly at center.
             uniforms.uCollapse.value = 1.0;
             pMat.uniforms.uCollapse.value = 1.0;
             pMat.uniforms.uPulseAmp.value = 0;
             phase = 'held';
-          } else if (t < 7.90) {
-            // Phase 5 — Flash. Release the singularity: burst white-out,
-            // set uBurstTime so particle shader switches to ejecta mode.
+          } else if (t < 6.70) {
+            // Phase 5 — Flash (0.25s). Release the singularity: burst
+            // white-out, set uBurstTime so particle shader flips to
+            // ejecta mode and expansion begins from origin.
             if (pMat.uniforms.uBurstTime.value < 0) {
               pMat.uniforms.uBurstTime.value = performance.now() / 1000;
             }
-            uniforms.uBurst.value = (t - 7.65) / 0.25;
-            // uCollapse released so if we re-read idle branch nothing weird
+            uniforms.uBurst.value = (t - 6.45) / 0.25;
             pMat.uniforms.uCollapse.value = 0;
             phase = 'flashing';
-          } else if (t < 10.10) {
-            // Phase 6 — Ejecta expansion (particle shader t>0 branch).
+          } else if (t < 8.90) {
+            // Phase 6 — Ejecta expansion (2.2s, particle shader t>0 branch).
             uniforms.uBurst.value = 1.0;
             phase = 'ejecting';
           } else {
@@ -2985,7 +2985,7 @@ if (tweaksRoot) ReactDOM.createRoot(tweaksRoot).render(<TweaksHost />);
    * scheduled deck.next() at t=13800ms advances cleanly.
    * ─────────────────────────────────────────────────────────── */
   {
-    const INTRO_NEXT_DELAY_MS = 13800;  // mirrors remote-host.js INTRO_EXPLODE_TO_NEXT_MS
+    const INTRO_NEXT_DELAY_MS = 12600;  // mirrors remote-host.js INTRO_EXPLODE_TO_NEXT_MS
     const origGo = deck._go.bind(deck);
     let pendingGoTimeout = null;
 

@@ -28,6 +28,21 @@
 const INTRO_EXPLODE_TO_NEXT_MS = 10800;  // start tap → deck.next() fires (end of settled hold)
 const INTRO_TOTAL_BUDGET_MS    = 12600;  // start tap → slide 1 fully arrived (+1.8s first-slide enter)
 
+/* Cosmic-ambient pacing (deck-side audio bed synced to the visual
+ * state machine in SlideIntro). Times are seconds relative to the
+ * explode moment (AudioContext.currentTime basis).
+ *   • fade-in covers the 3.5s tensioning phase
+ *   • shimmer bell starts 0.5s before the flash for anticipation
+ *   • whoosh hits ON the flash frame (t = 6.45)
+ *   • release begins as deck.next() fires at 10.80s, 1.8s fall
+ *     covers the slide 1 scatterboard enter (ends at 12.60s)
+ */
+const AMBIENT_FADE_IN_SEC          = 3.0;
+const AMBIENT_SHIMMER_SEC          = 5.95;
+const AMBIENT_WHOOSH_SEC           = 6.45;
+const AMBIENT_RELEASE_AT_MS        = 10800;
+const AMBIENT_RELEASE_DURATION_SEC = 1.8;
+
 (() => {
   const deck = document.querySelector('deck-stage');
   if (!deck) return;
@@ -43,6 +58,202 @@ const INTRO_TOTAL_BUDGET_MS    = 12600;  // start tap → slide 1 fully arrived 
   let peer = null;
   let peerReady = false;
   const conns = new Set();
+
+  /* ─── Cosmic-ambient audio (deck-side, classroom speakers) ─────────
+   * AudioContext can't be opened until a user gesture. We listen
+   * once on pointer/key/touch and lazily create the ctx. Presenter
+   * will typically click or press a key on the deck window (enter
+   * fullscreen, focus, etc.) before tapping BIG BANG on the phone.
+   * If no gesture has occurred by the time 'start' arrives, the
+   * visual cosmic still runs — only the ambient is silent. */
+  let deckAudioCtx = null;
+  const cosmicAmbient = {
+    active: false,
+    masterGain: null,
+    dryBus: null,
+    revInput: null,
+    nodes: [],           // oscillators + LFOs held for cleanup
+    cleanupTimer: null,
+  };
+
+  function unlockDeckAudioOnce() {
+    const tryUnlock = () => {
+      if (deckAudioCtx) return;
+      try {
+        deckAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (deckAudioCtx.state === 'suspended') deckAudioCtx.resume();
+      } catch (e) { deckAudioCtx = null; }
+    };
+    ['pointerdown','keydown','touchstart'].forEach((ev) => {
+      window.addEventListener(ev, tryUnlock, { once: true, capture: true });
+    });
+  }
+
+  /* Ethereal bed — sub drone (A1) + pad chord (A3/E4/A4 detuned sines,
+   * 0.15Hz breathing) + dual-delay "space" reverb. Layers build over
+   * AMBIENT_FADE_IN_SEC so the audio rises under the cosmic tensioning
+   * phase rather than slamming in at zero. */
+  function startCosmicAmbient() {
+    if (!deckAudioCtx || cosmicAmbient.active) return;
+    cosmicAmbient.active = true;
+
+    const ctx = deckAudioCtx;
+    const now = ctx.currentTime;
+    const SUSTAIN_GAIN = 0.26;  // classroom speakers; leaves headroom under presenter's voice
+
+    // Master bus — soft exponential fade-in
+    const master = ctx.createGain();
+    master.gain.setValueAtTime(0.0001, now);
+    master.gain.exponentialRampToValueAtTime(SUSTAIN_GAIN, now + AMBIENT_FADE_IN_SEC);
+    master.connect(ctx.destination);
+
+    // Parallel dry + wet buses
+    const dryBus = ctx.createGain(); dryBus.gain.value = 1.0; dryBus.connect(master);
+    const wetBus = ctx.createGain(); wetBus.gain.value = 0.40; wetBus.connect(master);
+
+    // Cheap dual-delay space reverb (two prime-ish taps, lowpassed feedback)
+    const revInput = ctx.createGain();
+    const d1 = ctx.createDelay(1.0); d1.delayTime.value = 0.137;
+    const d2 = ctx.createDelay(1.0); d2.delayTime.value = 0.197;
+    const fbLP = ctx.createBiquadFilter();
+    fbLP.type = 'lowpass'; fbLP.frequency.value = 2600;
+    const fb1 = ctx.createGain(); fb1.gain.value = 0.44;
+    const fb2 = ctx.createGain(); fb2.gain.value = 0.44;
+    revInput.connect(d1); revInput.connect(d2);
+    d1.connect(fb1); fb1.connect(fbLP); fbLP.connect(d1);
+    d2.connect(fb2); fb2.connect(fbLP); fbLP.connect(d2);
+    d1.connect(wetBus); d2.connect(wetBus);
+
+    // ── Layer 1: Sub drone — A1 saw pair (55, 55.5 Hz), lowpassed ──
+    const subLP = ctx.createBiquadFilter();
+    subLP.type = 'lowpass'; subLP.frequency.value = 180; subLP.Q.value = 0.5;
+    const subSum = ctx.createGain(); subSum.gain.value = 0.55;
+    subLP.connect(subSum); subSum.connect(dryBus);  // sub stays dry — reverb muddies lows
+    [55.0, 55.5].forEach((hz) => {
+      const osc = ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.value = hz;
+      osc.connect(subLP);
+      osc.start(now);
+      cosmicAmbient.nodes.push(osc);
+    });
+
+    // ── Layer 2: Pad — A3/E4/A4 detuned sine cluster with 0.15Hz LFO ──
+    const padSum = ctx.createGain(); padSum.gain.value = 0.22;
+    const padDry = ctx.createGain(); padDry.gain.value = 0.55;
+    const padWet = ctx.createGain(); padWet.gain.value = 0.90;
+    padSum.connect(padDry); padSum.connect(padWet);
+    padDry.connect(dryBus);
+    padWet.connect(revInput);
+    [
+      { hz: 220.00, detune:  0 },
+      { hz: 220.00, detune: +4 },
+      { hz: 329.63, detune: -3 },
+      { hz: 329.63, detune: +3 },
+      { hz: 440.00, detune: -4 },
+    ].forEach(({ hz, detune }) => {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = hz;
+      osc.detune.value = detune;
+      osc.connect(padSum);
+      osc.start(now);
+      cosmicAmbient.nodes.push(osc);
+    });
+    // LFO → padSum.gain ("breathing")
+    const lfo = ctx.createOscillator();
+    const lfoAmt = ctx.createGain();
+    lfo.type = 'sine';
+    lfo.frequency.value = 0.15;
+    lfoAmt.gain.value = 0.06;
+    lfo.connect(lfoAmt); lfoAmt.connect(padSum.gain);
+    lfo.start(now);
+    cosmicAmbient.nodes.push(lfo);
+
+    cosmicAmbient.masterGain = master;
+    cosmicAmbient.dryBus = dryBus;
+    cosmicAmbient.revInput = revInput;
+  }
+
+  /* A6 shimmer bell — 0.45s swell, 0.45s release. Fires 0.5s
+   * before the visual flash so the ear anticipates the peak. */
+  function scheduleCosmicShimmer(atCtxTime) {
+    if (!deckAudioCtx || !cosmicAmbient.revInput) return;
+    const ctx = deckAudioCtx;
+    const osc = ctx.createOscillator();
+    const g   = ctx.createGain();
+    const dryAmt = ctx.createGain(); dryAmt.gain.value = 0.35;
+    const wetAmt = ctx.createGain(); wetAmt.gain.value = 0.80;
+    osc.type = 'sine';
+    osc.frequency.value = 1760;  // A6
+    osc.connect(g);
+    g.connect(dryAmt); dryAmt.connect(cosmicAmbient.dryBus);
+    g.connect(wetAmt); wetAmt.connect(cosmicAmbient.revInput);
+    g.gain.setValueAtTime(0.0001, atCtxTime);
+    g.gain.exponentialRampToValueAtTime(0.11, atCtxTime + 0.45);
+    g.gain.exponentialRampToValueAtTime(0.0001, atCtxTime + 0.90);
+    osc.start(atCtxTime); osc.stop(atCtxTime + 0.95);
+  }
+
+  /* Flash whoosh — filtered-noise burst, bandpass swept 400→4000Hz
+   * over 0.85s with fast-attack / exp-decay gain. Impact hit at
+   * the moment of the visual white-out. */
+  function scheduleCosmicWhoosh(atCtxTime) {
+    if (!deckAudioCtx) return;
+    const ctx = deckAudioCtx;
+    const dur = 0.85;
+    const buffer = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * dur), ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 0.9;
+    bp.frequency.setValueAtTime(400, atCtxTime);
+    bp.frequency.exponentialRampToValueAtTime(4000, atCtxTime + dur);
+
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, atCtxTime);
+    g.gain.exponentialRampToValueAtTime(0.38, atCtxTime + 0.08);
+    g.gain.exponentialRampToValueAtTime(0.0001, atCtxTime + dur);
+
+    const dryAmt = ctx.createGain(); dryAmt.gain.value = 0.65;
+    const wetAmt = ctx.createGain(); wetAmt.gain.value = 0.55;
+
+    src.connect(bp); bp.connect(g);
+    g.connect(dryAmt); g.connect(wetAmt);
+    dryAmt.connect(cosmicAmbient.dryBus || ctx.destination);
+    wetAmt.connect(cosmicAmbient.revInput || ctx.destination);
+    src.start(atCtxTime);
+  }
+
+  function stopCosmicAmbient(fadeOutSec = AMBIENT_RELEASE_DURATION_SEC) {
+    if (!deckAudioCtx || !cosmicAmbient.active) return;
+    const ctx = deckAudioCtx;
+    const now = ctx.currentTime;
+    if (cosmicAmbient.masterGain) {
+      const g = cosmicAmbient.masterGain.gain;
+      const curVal = g.value;
+      g.cancelScheduledValues(now);
+      g.setValueAtTime(Math.max(curVal, 0.0001), now);
+      g.exponentialRampToValueAtTime(0.0001, now + fadeOutSec);
+    }
+    if (cosmicAmbient.cleanupTimer) clearTimeout(cosmicAmbient.cleanupTimer);
+    cosmicAmbient.cleanupTimer = setTimeout(() => {
+      cosmicAmbient.nodes.forEach((n) => {
+        try { n.stop && n.stop(); } catch (e) {}
+        try { n.disconnect && n.disconnect(); } catch (e) {}
+      });
+      cosmicAmbient.nodes = [];
+      cosmicAmbient.masterGain = null;
+      cosmicAmbient.dryBus = null;
+      cosmicAmbient.revInput = null;
+      cosmicAmbient.active = false;
+    }, Math.ceil((fadeOutSec + 0.2) * 1000));
+  }
 
   /* ───────────────────────────── status dot UI ─────────────────── */
 
@@ -212,6 +423,19 @@ const INTRO_TOTAL_BUDGET_MS    = 12600;  // start tap → slide 1 fully arrived 
         const active = document.querySelector('deck-stage > section[data-deck-active]');
         const onIntro = active?.getAttribute('data-label') === 'Intro';
         if (!onIntro) { deck.next && deck.next(); break; }
+
+        /* Cosmic-ambient bed — synced to the visual phase map. Bed
+         * begins now (fades in under tensioning); shimmer bell
+         * anticipates the flash; whoosh hits on the flash frame;
+         * release starts as deck.next() fires (slide 1 enter). */
+        if (deckAudioCtx) {
+          startCosmicAmbient();
+          const t0 = deckAudioCtx.currentTime;
+          scheduleCosmicShimmer(t0 + AMBIENT_SHIMMER_SEC);
+          scheduleCosmicWhoosh(t0 + AMBIENT_WHOOSH_SEC);
+          setTimeout(() => stopCosmicAmbient(), AMBIENT_RELEASE_AT_MS);
+        }
+
         window.dispatchEvent(new CustomEvent('deck-explode'));
         setTimeout(() => { deck.next && deck.next(); }, INTRO_EXPLODE_TO_NEXT_MS);
         break;
@@ -242,6 +466,7 @@ const INTRO_TOTAL_BUDGET_MS    = 12600;  // start tap → slide 1 fully arrived 
   /* ───────────────────────────── boot ───────────────────────────── */
 
   injectStatusUI();
+  unlockDeckAudioOnce();
   startPeer();
 
   // Expose for debugging only.

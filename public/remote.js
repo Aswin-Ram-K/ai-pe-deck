@@ -24,7 +24,7 @@
 
   /* Bumps per deploy so iOS Safari can't serve cached assets after
    * we ship a fix. Seen as ?v=<stamp> on remote.js + speaker-script.json. */
-  const BUILD_VERSION = '20260421-10s-countdown';
+  const BUILD_VERSION = '20260421-bigbang-sync';
 
   /* Total presentation budget used by the "Total" countdown in the
    * timer strip. Starts the moment the teleprompter lands on a
@@ -59,8 +59,20 @@
   let conn = null;
   let reconnectTimer = null;
 
-  const countdown = { active: false, intervalId: null };
+  const countdown = {
+    active: false,
+    intervalId: null,
+    explodeTimerId: null,   // fires send({action:'start'}) 3.55s in, so flash at count=0
+  };
   let audioCtx = null;
+
+  /* Deck's cosmic state machine schedules the visual big-bang (flash)
+   * at +6.45s after `deck-explode` fires. We want count=0 ("GO") to
+   * land at the flash, so explode must fire (COUNTDOWN_SEC - 6.45)s
+   * after BIG BANG tap. All ambient audio is deck-side (see
+   * `remote-host.js` startCosmicAmbient). Phone keeps the voice +
+   * ticks + GO tone on earphones. */
+  const VISUAL_FLASH_OFFSET_MS = 6450;
 
   const tele = {
     script: null,           // parsed speaker-script.json
@@ -204,6 +216,16 @@
 
     unlockAudio();
 
+    /* Fire the deck's cosmic intro early so the +6.45s visual flash
+     * coincides with count=0 ("GO"). With COUNTDOWN_SEC=10, this is
+     * T+3.55s. Phone keeps ticking 10→0 at 1Hz — the cosmic visual
+     * tensioning+intensifying plays under the last ~6.5s of counts. */
+    const explodeDelayMs = (COUNTDOWN_SEC * 1000) - VISUAL_FLASH_OFFSET_MS;
+    countdown.explodeTimerId = setTimeout(() => {
+      countdown.explodeTimerId = null;
+      send({ action: 'start' });
+    }, Math.max(0, explodeDelayMs));
+
     let n = COUNTDOWN_SEC;
     showCountdownNum(n);
     speakAndBeep(n);
@@ -214,12 +236,11 @@
         showCountdownNum(n);
         speakAndBeep(n);
       } else {
-        // t = 0 — fire the deck, announce GO, stop the interval
+        // t = 0 — visual flash lands here; announce GO (explode already fired)
         clearInterval(countdown.intervalId);
         countdown.intervalId = null;
         showCountdownNum(0);
         speakAndBeep(0);
-        send({ action: 'start' });
         // Stay in C. Exit when state message arrives with non-Intro label.
       }
     }, 1000);
@@ -228,7 +249,8 @@
   function exitCountdown() {
     if (!countdown.active) return;
     countdown.active = false;
-    if (countdown.intervalId) { clearInterval(countdown.intervalId); countdown.intervalId = null; }
+    if (countdown.intervalId)    { clearInterval(countdown.intervalId);  countdown.intervalId = null; }
+    if (countdown.explodeTimerId) { clearTimeout(countdown.explodeTimerId); countdown.explodeTimerId = null; }
     document.body.classList.remove('counting-down');
   }
 

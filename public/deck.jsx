@@ -1067,7 +1067,8 @@ function SlideIntro() {
         `,
       });
       const sphere = new THREE.Mesh(sphereGeom, sphereMat);
-      scene.add(sphere);
+      sphere.visible = false;  // v4: sphere removed — screen is pure particle field
+      // scene.add(sphere);  // kept in code in case you want to revert
 
       /* ─── Corona (back-facing, additive blend) ─── */
       const coronaGeom = new THREE.IcosahedronGeometry(0.70, 24);
@@ -1122,40 +1123,59 @@ function SlideIntro() {
         `,
       });
       const corona = new THREE.Mesh(coronaGeom, coronaMat);
-      scene.add(corona);
+      corona.visible = false;  // v4: corona removed — no sphere to halo
+      // scene.add(corona);
 
-      /* ─── Particle ejecta (1500 points, GPU-driven) ─── */
-      const PCOUNT = 1500;
-      const SPHERE_R = 0.5;  // must match sphereGeom radius
+      /* ─── Particle field (3500 points, full-screen nebulous cloud) ───
+       * No sphere, no halo. Particles distributed through a volume that
+       * spans the viewport. Idle: each particle drifts + responds to a
+       * radial pulse wave propagating from center (uPulseAmp + uPulseFreq
+       * control amplitude/speed). Tensioning builds pulse, intensifying
+       * ramps frequency. Imploding (uCollapse 0→1) pulls every particle
+       * to origin. Flash releases ejecta (existing expansion behavior). */
+      const PCOUNT = 6000;  // dense nebular cloud (Apple-silicon-comfortable)
       const pGeom = new THREE.BufferGeometry();
-      const pPositions = new Float32Array(PCOUNT * 3); // origin baseline
-      const pDirs      = new Float32Array(PCOUNT * 3); // unit outward
+      const pPositions = new Float32Array(PCOUNT * 3);
+      const pDirs      = new Float32Array(PCOUNT * 3);  // unit direction
       const pColors    = new Float32Array(PCOUNT * 3);
       const pSpeeds    = new Float32Array(PCOUNT);
+      const pBaseR     = new Float32Array(PCOUNT);      // per-particle resting radius
       for (let i = 0; i < PCOUNT; i++) {
         // Uniform sphere direction (Marsaglia method)
-        let u = Math.random() * 2 - 1;
-        let th = Math.random() * Math.PI * 2;
-        let r = Math.sqrt(1 - u * u);
-        const dx = r * Math.cos(th), dy = r * Math.sin(th), dz = u;
+        const u = Math.random() * 2 - 1;
+        const th = Math.random() * Math.PI * 2;
+        const sr = Math.sqrt(1 - u * u);
+        const dx = sr * Math.cos(th), dy = sr * Math.sin(th), dz = u;
         pDirs[i*3  ] = dx; pDirs[i*3+1] = dy; pDirs[i*3+2] = dz;
-        pPositions[i*3] = dx * SPHERE_R;
-        pPositions[i*3+1] = dy * SPHERE_R;
-        pPositions[i*3+2] = dz * SPHERE_R;
+
+        // Base radius distributed 0.25 → 2.2 so particles fill viewport
+        // (camera z=4.2, FOV 40° → visible half-height at z=0 is ≈1.53;
+        // extend to 2.2 so field runs off-screen at edges, no hard cutoff)
+        // Use cube-root distribution for even volumetric density.
+        const baseR = 0.25 + Math.pow(Math.random(), 0.7) * 1.95;
+        pBaseR[i] = baseR;
+        pPositions[i*3  ] = dx * baseR;
+        pPositions[i*3+1] = dy * baseR;
+        pPositions[i*3+2] = dz * baseR;
+
         const c = paletteVec3[i % 5];
         pColors[i*3  ] = c.r; pColors[i*3+1] = c.g; pColors[i*3+2] = c.b;
-        pSpeeds[i] = 1.5 + Math.random() * 2.2;  // slightly slower to match smaller sphere
+        pSpeeds[i] = 1.5 + Math.random() * 2.2;
       }
       pGeom.setAttribute('position', new THREE.BufferAttribute(pPositions, 3));
       pGeom.setAttribute('aDir',     new THREE.BufferAttribute(pDirs, 3));
       pGeom.setAttribute('aColor',   new THREE.BufferAttribute(pColors, 3));
       pGeom.setAttribute('aSpeed',   new THREE.BufferAttribute(pSpeeds, 1));
+      pGeom.setAttribute('aBaseR',   new THREE.BufferAttribute(pBaseR, 1));
 
       const pMat = new THREE.ShaderMaterial({
         uniforms: {
           uTime:      { value: 0 },
-          uBurstTime: { value: -1 },  // -1 = inactive
+          uBurstTime: { value: -1 },   // -1 = inactive (idle/tensioning mode)
           uDPR:       { value: DPR },
+          uPulseAmp:  { value: 0 },    // radial wave amplitude (0 idle → 0.08 climax)
+          uPulseFreq: { value: 0.8 },  // wave freq in Hz (0.8 idle → 18 climax)
+          uCollapse:  { value: 0 },    // 0 resting → 1 imploded to center
         },
         transparent: true,
         depthWrite: false,
@@ -1164,9 +1184,13 @@ function SlideIntro() {
           attribute vec3 aDir;
           attribute vec3 aColor;
           attribute float aSpeed;
+          attribute float aBaseR;
           uniform float uTime;
           uniform float uBurstTime;
           uniform float uDPR;
+          uniform float uPulseAmp;
+          uniform float uPulseFreq;
+          uniform float uCollapse;
           varying vec3 vColor;
           varying float vAlpha;
           void main() {
@@ -1174,22 +1198,42 @@ function SlideIntro() {
             float t = (uBurstTime < 0.0) ? -1.0 : (uTime - uBurstTime);
             vec3 pos;
             if (t < 0.0) {
-              // Idle drift — particles orbit in the halo shell AROUND
-              // the sphere (radii 0.55 → 0.85), visible as atmospheric
-              // gas wrapping the plasma core. Deterministic per-particle
-              // offset via aSpeed so composition is stable across frames.
+              // Nebulous cloud — particle at base radius with slow drift +
+              // a radial wave propagating outward from origin. The wave
+              // phase depends on distance so pulses visibly travel from
+              // center → edge (fabric ripple effect).
               float seed = aSpeed * 7.13;
               float driftPhase = uTime * 0.18 + seed;
-              float radialPhase = uTime * 0.12 + seed * 0.7;
-              float r = 0.55 + 0.30 * (0.5 + 0.5 * sin(radialPhase));
+
+              // Radial traveling wave: speed ~2.5 units/sec, frequency uPulseFreq Hz.
+              // Phase = (t - d/speed) * freq → each wavelength propagates outward.
+              float wavePhase = (uTime - aBaseR / 2.5) * uPulseFreq;
+              float wave = sin(wavePhase * 6.2831853) * uPulseAmp;
+
+              // Small 3D drift to keep the cloud alive even at uPulseAmp=0
               vec3 drift = vec3(
-                sin(driftPhase * 0.63 + seed * 1.9) * 0.08,
-                cos(driftPhase * 0.41 + seed * 3.1) * 0.08,
-                sin(driftPhase * 0.57 + seed * 2.3) * 0.08
+                sin(driftPhase * 0.63 + seed * 1.9) * 0.06,
+                cos(driftPhase * 0.41 + seed * 3.1) * 0.06,
+                sin(driftPhase * 0.57 + seed * 2.3) * 0.06
               );
-              pos = aDir * r + drift;
-              // Alpha pulses noticeably so the halo breathes — gas-cloud feel
-              vAlpha = 0.55 + 0.30 * sin(driftPhase * 0.5 + seed);
+
+              // Resting radius offset by wave
+              float r = aBaseR + wave;
+
+              // Convergence: uCollapse pulls every particle toward origin
+              r = mix(r, 0.02, uCollapse);
+              // Drift also damps during collapse so the convergence reads clean
+              vec3 driftActive = drift * (1.0 - uCollapse);
+
+              pos = aDir * r + driftActive;
+
+              // Alpha breathes gently + brightens on the leading edge of
+              // each wave (positive-phase crests more visible). Higher
+              // base alpha + stronger crest = denser, more cloud-like feel.
+              float crest = max(0.0, wave / max(uPulseAmp, 0.001));
+              vAlpha = 0.65 + 0.28 * sin(driftPhase * 0.5 + seed) + 0.30 * crest;
+              // Slight dim when fully collapsed (compressed point)
+              vAlpha *= 1.0 - 0.35 * uCollapse;
             } else {
               // Ejecta — radiate outward from sphere surface over 2.2s.
               float dist = t * aSpeed * (1.0 - 0.3 * smoothstep(0.0, 2.2, t));
@@ -1198,7 +1242,9 @@ function SlideIntro() {
             }
             vec4 mv = modelViewMatrix * vec4(pos, 1.0);
             gl_Position = projectionMatrix * mv;
-            float baseSize = (t < 0.0) ? 4.5 : (3.5 + (1.0 - smoothstep(0.0, 2.2, t)) * 5.0);
+            // Idle size slightly larger for cloud-cohesion; during ejecta
+            // shrinks as particles travel (existing behavior).
+            float baseSize = (t < 0.0) ? 5.5 : (3.5 + (1.0 - smoothstep(0.0, 2.2, t)) * 5.0);
             gl_PointSize = baseSize * uDPR;
           }
         `,
@@ -1255,64 +1301,59 @@ function SlideIntro() {
         uniforms.iTime.value = elapsed;
         pMat.uniforms.uTime.value = elapsed;
 
-        // Sphere revolve — slow Y-axis, subtle X wobble
-        sphere.rotation.y  += 0.0018;
-        sphere.rotation.x   = Math.sin(elapsed * 0.13) * 0.06;
-        corona.rotation.y   = sphere.rotation.y * 0.6;
+        // Sphere/corona are hidden (v4), kept for teardown + potential revert.
+        // Particle cloud is now the entire visible intro field.
 
         if (phase !== 'idle') {
           const t = (performance.now() - burstAt) / 1000;
 
           if (t < 3.5) {
-            // Phase 1 — Tensioning (wake + slow pulse)
+            // Phase 1 — Tensioning. Wave pulses start propagating from
+            // center. Amplitude + frequency both ramp from rest.
             const p = t / 3.5;
             uniforms.uTension.value = p * 0.4;
-            const baseScale = 1.0 + 0.15 * p;
-            const pulseFreq = 0.5 + 1.5 * p;                     // 0.5 → 2Hz
-            const pulseAmp  = 0.02 + 0.06 * p;
-            const pulse = Math.sin(t * pulseFreq * Math.PI * 2) * pulseAmp;
-            sphere.scale.setScalar(baseScale + pulse);
-            corona.scale.setScalar(baseScale + pulse * 0.7);
+            pMat.uniforms.uPulseAmp.value  = 0.02 + 0.06 * p;   // 0.02 → 0.08
+            pMat.uniforms.uPulseFreq.value = 0.8  + 1.2  * p;   // 0.8 → 2.0 Hz
             phase = 'tensioning';
           } else if (t < 6.0) {
-            // Phase 2 — Intensifying (pulse freq ramps past perceptual threshold)
+            // Phase 2 — Intensifying. Frequency ramps past perceptual
+            // threshold (~25Hz) so ripples become indistinguishable
+            // individual cycles — reads as chaotic shivering.
             const p = (t - 3.5) / 2.5;
             uniforms.uTension.value = 0.4 + 0.6 * p;
-            const pulseFreq = 2.0 + 16.0 * p;                    // 2 → 18Hz
-            const pulseAmp  = 0.08 * (1.0 - p * 0.3);            // slight reduction for blur feel
-            const pulse = Math.sin(t * pulseFreq * Math.PI * 2) * pulseAmp;
-            sphere.scale.setScalar(1.15 + pulse);
-            corona.scale.setScalar(1.15 + pulse * 0.7);
+            pMat.uniforms.uPulseAmp.value  = 0.08 * (1.0 - p * 0.2);  // slight reduction
+            pMat.uniforms.uPulseFreq.value = 2.0 + 16.0 * p;          // 2 → 18 Hz
             phase = 'intensifying';
           } else if (t < 6.55) {
-            // Phase 3 — Imploding
+            // Phase 3 — Imploding. Pulse dies. Collapse pulls every
+            // particle in the cloud to origin.
             uniforms.uTension.value = 1.0;
             const p = (t - 6.0) / 0.55;
-            uniforms.uCollapse.value = p;
-            const s = 1.15 - 1.07 * p;
-            sphere.scale.setScalar(s);
-            corona.scale.setScalar(s * 0.9);
+            const ease = p * p * (3.0 - 2.0 * p);  // smoothstep curve
+            uniforms.uCollapse.value = ease;
+            pMat.uniforms.uCollapse.value = ease;
+            pMat.uniforms.uPulseAmp.value = 0.08 * (1.0 - ease);
             phase = 'imploding';
           } else if (t < 7.65) {
-            // Phase 4 — Held singularity (dramatic pause)
+            // Phase 4 — Held singularity. All particles compressed at
+            // the center; dense bright point. Subtle tremor.
             uniforms.uCollapse.value = 1.0;
-            const tremor = Math.sin(elapsed * 38) * 0.008;
-            sphere.scale.setScalar(0.08 + tremor);
-            corona.scale.setScalar(0.05);
+            pMat.uniforms.uCollapse.value = 1.0;
+            pMat.uniforms.uPulseAmp.value = 0;
             phase = 'held';
           } else if (t < 7.90) {
-            // Phase 5 — Flash (release particles)
+            // Phase 5 — Flash. Release the singularity: burst white-out,
+            // set uBurstTime so particle shader switches to ejecta mode.
             if (pMat.uniforms.uBurstTime.value < 0) {
               pMat.uniforms.uBurstTime.value = performance.now() / 1000;
             }
-            sphere.scale.setScalar(0.08);
             uniforms.uBurst.value = (t - 7.65) / 0.25;
+            // uCollapse released so if we re-read idle branch nothing weird
+            pMat.uniforms.uCollapse.value = 0;
             phase = 'flashing';
           } else if (t < 10.10) {
-            // Phase 6 — Ejecta expansion (sphere/corona vanish)
+            // Phase 6 — Ejecta expansion (particle shader t>0 branch).
             uniforms.uBurst.value = 1.0;
-            sphere.visible = false;
-            corona.visible = false;
             phase = 'ejecting';
           } else {
             // Phase 7+ — Universe erupts. Aurora materializes via CSS

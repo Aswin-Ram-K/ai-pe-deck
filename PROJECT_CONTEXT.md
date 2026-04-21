@@ -20,7 +20,7 @@ component.
 |---|---|
 | Next.js / Vite | Overkill for a 13-slide deck; speaker iterates via CLI prompts, no dev-server complexity needed |
 | reveal.js / Spectacle | Harder to inject domain-specific SVG visuals; opinionated slide grammar fights custom layouts |
-| PowerPoint native | No animation granularity, no voice control, no live CLI editing |
+| PowerPoint native | No animation granularity, no WebRTC remote, no live CLI editing |
 
 **Why this won**: the deck is a single-purpose artifact — I wanted
 direct control of the SVG visuals (Pareto scatter, control loop,
@@ -60,13 +60,39 @@ Both live at `<body>` level so they don't move during slide
 transitions — the "fixed deck, elements moving between slides" feel
 the presenter wants.
 
-### 4 · Voice control — live, not post-utterance
-Web Speech API with `continuous: true` + `interimResults: true`.
-Buffer split into `finalBuf` (committed) and `interimBuf` (replaced
-per update) to avoid the duplication bug where each interim event
-re-appends the full transcript. Match runs on every `onresult`,
-fuzzy-tolerant (≤ 12 char gap between trigger words). Progress meter
-in the UI fills as the speaker approaches the next cue.
+### 4 · Phone remote (supersedes voice control)
+Voice control (Web Speech API, interim-result dedup + fuzzy match)
+was the original control plane and shipped in commits through
+`e6c22f9`. It was removed in `138f0b3` (2026-04-20) in favor of a
+**phone-remote subsystem** using WebRTC via PeerJS.
+
+- **Static peer ID** `ai-pe-deck-aswin-ram-k-ece563` — baked into
+  both `remote-host.js` (deck side) and `remote.js` (phone side), so
+  no QR / room code / pairing ceremony. The phone bookmark auto-
+  connects whenever the deck is open.
+- **Protocol** over PeerJS DataChannel:
+  - Phone → Deck: `{action: 'next'|'prev'|'home'|'end'|'goto'|'start', index?}`
+  - Deck → Phone: `{type: 'state', index, total, label}`
+- **Status dot** in the deck's bottom-right corner indicates peer
+  state (ready / connected / busy / error) without visible chrome.
+- **Intro-mode morph**: when the deck reports `label: 'Intro'`, the
+  phone's Next button becomes a pulsing START. Tapping dispatches
+  `{action: 'start'}` → deck fires `deck-explode` CustomEvent →
+  SlideIntro's particle burst runs in parallel with the
+  scatterboard transition to slide 1.
+
+**Why this won** over voice control: voice required a single-device
+mic on the laptop, fought presenter-to-audience speech, and needed
+a silent room. The phone remote is a dedicated second-device control
+plane — zero contention with the speaker's voice, works in any
+lecture hall, and the static peer ID removes all on-stage pairing
+friction. Trade-off: requires internet at the venue for PeerJS
+broker signaling (acceptable — every venue has it).
+
+**Not private**: anyone who guessed the PEER_ID string could connect
+to the deck. The PeerJS public broker is signaling-only, so there's
+no cryptographic barrier. Acceptable for a 15-minute classroom demo;
+change the suffix if reusing this engine elsewhere.
 
 ### 5 · Docker for local runtime, GitHub Pages for public
 Local dev: `docker compose up` serves via Express on port 3000 with
@@ -75,7 +101,7 @@ proxy to shell out to a locally-installed Claude CLI (optional).
 
 Public deploy: GitHub Actions workflow uploads `public/` as a Pages
 artifact. The `/api/claude` endpoint is absent on Pages (static hosting);
-all the deck needs is client-side — Web Speech API, React/Babel CDN,
+all the deck needs is client-side — React/Babel + PeerJS from CDN,
 local JSON fetch of `speaker-notes.json`.
 
 ---
@@ -96,7 +122,9 @@ local JSON fetch of `speaker-notes.json`.
 | `public/index.html` | Shell — loads React/Babel, deck-stage, boots deck.jsx → engine.js |
 | `public/deck.jsx` | All 13 slide React components + PE visual library (PWM, Pareto, neural net, sparklines, control loop, RUL cone, paper cluster, trend projection) + slide-change orchestration (exit → priming → enter) |
 | `public/deck-stage.js` | Web component — keyboard nav, slide persistence via URL fragment, slot management |
-| `public/engine.js` | Animated backdrop (aurora CSS + flow-field canvas), reveal groups, voice controller, trigger phrase extraction |
+| `public/engine.js` | Animated backdrop (aurora CSS + flow-field canvas). Voice/reveal systems removed. |
+| `public/remote-host.js` | Deck-side PeerJS peer (static ID), handles phone commands, dispatches deck-explode on intro-start |
+| `public/remote.html` / `public/remote.js` | Phone-side control surface — status dot, slide-num display, big prev/next, swipe gestures, intro-mode START morph |
 | `public/styles.css` | Theme tokens, all animation primitives, transition variants, scatter + priming + arrived pins |
 | `public/speaker-notes.json` | Per-slide narration — voice triggers auto-extracted from first sentence of each note |
 | `server/index.js` | Express server for local dev (irrelevant on GH Pages) |
@@ -113,3 +141,6 @@ local JSON fetch of `speaker-notes.json`.
 - 2026-04-20: Voice controller — interim-result dedup + fuzzy match + live progress meter.
 - 2026-04-20: Speaker notes rewritten for graduate-level audience — semi-professional, engaging, technical depth retained.
 - 2026-04-20: Published to GitHub (pending repo creation).
+- 2026-04-20: Voice + reveal-group systems removed (`138f0b3`) in favor of a phone-remote control plane. PeerJS-based pairing via QR (`853172a`), then simplified to static peer ID + auto-start (`917d10a`).
+- 2026-04-21: Pre-show intro slide (s0) added — revolving SVG star with drifting hue orbs, 34-particle explosion on phone-remote START. Aurora/flow-field fade to black during intro-mode.
+- 2026-04-21: Full audit (log `022-ai-pe-deck-audit-2026-04-21`) → added `package-lock.json`, pinned Node 20.18, SRI-hashed PeerJS, tightened stale voice-refs. `CLAUDE.md` initialized at project root.

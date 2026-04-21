@@ -13,7 +13,10 @@ app/
 │   ├── styles.css        ← theme tokens + animations
 │   ├── deck-stage.js     ← slide-stage web component (nav, scaling, print)
 │   ├── deck.jsx          ← React source for all 13 slides
-│   ├── engine.js         ← animated bg + reveal system + voice control
+│   ├── engine.js         ← animated bg (aurora + flow-field canvas)
+│   ├── remote-host.js    ← deck-side PeerJS peer (phone remote)
+│   ├── remote.html       ← phone-side control surface
+│   ├── remote.js         ← phone-side PeerJS client
 │   └── speaker-notes.json← narration per slide — CLI-editable
 ├── server/
 │   ├── index.js          ← Express app (port auto-detect + Claude proxy)

@@ -2,8 +2,8 @@
 #
 # Only `public/` ships — the server/, Docker setup, and PPTX export
 # scripts are dev-only and don't need to be on the static CDN. The
-# deck is fully client-side: React/Babel from CDN, Web Speech API,
-# and a relative fetch of `speaker-notes.json`.
+# deck is fully client-side: React/Babel from CDN, PeerJS for the
+# phone remote, and a relative fetch of `speaker-notes.json`.
 name: Deploy deck to GitHub Pages
 
 on:

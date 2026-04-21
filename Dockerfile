@@ -1,11 +1,15 @@
 # Lightweight Node 20 base — Alpine keeps the image small.
-FROM node:20-alpine
+# Pinned to the 20.18 line for build-to-build reproducibility.
+FROM node:20.18-alpine
 
 WORKDIR /app
 
 # Install deps first so Docker layer cache works.
-COPY package.json ./
-RUN npm install --omit=dev
+# `npm ci` uses the committed lockfile for deterministic installs —
+# refuses to run if package.json and package-lock.json disagree,
+# which is exactly the guarantee we want for a timed presentation.
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
 
 # Copy the rest.
 COPY . .

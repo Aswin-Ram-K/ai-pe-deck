@@ -1,0 +1,20 @@
+{
+  "name": "ai-pe-deck",
+  "version": "1.0.0",
+  "description": "AI in Power Electronics — interactive deck with voice control and Claude CLI integration.",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "export:pptx": "node server/scripts/export-pptx.js",
+    "export:notes-pdf": "node server/scripts/export-notes-pdf.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "pdfkit": "^0.15.0",
+    "pptxgenjs": "^3.12.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

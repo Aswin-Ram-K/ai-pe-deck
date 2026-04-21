@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en" data-theme="dark" data-density="dense">
+<head>
+<meta charset="utf-8" />
+<title>AI in Power Electronics — Paper Review</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=Inter+Tight:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="styles.css" />
+
+<!-- Speaker notes — loaded from JSON at boot so they're editable by Claude CLI.
+     An empty placeholder script is written here; boot code fills it. -->
+<script type="application/json" id="speaker-notes">[]</script>
+
+</head>
+<body>
+
+<!-- React + Babel (pinned + integrity) -->
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<!-- deck-stage web component -->
+<script src="deck-stage.js"></script>
+
+<!-- Boot: load speaker notes JSON, then mount the deck, then start engine.
+     Order matters — deck.jsx expects #speaker-notes to be populated before
+     it reads them, and engine.js needs the deck mounted before attaching. -->
+<script>
+(async () => {
+  try {
+    const res = await fetch('speaker-notes.json', { cache: 'no-cache' });
+    if (res.ok) {
+      const notes = await res.json();
+      document.getElementById('speaker-notes').textContent = JSON.stringify(notes);
+    }
+  } catch (e) {
+    console.warn('[boot] could not load speaker-notes.json', e);
+  }
+
+  // Dynamically inject deck.jsx through Babel. We can't just <script
+  // type="text/babel" src="..."> reliably after React/Babel has loaded,
+  // so we fetch, transpile, and eval.
+  const deckRes = await fetch('deck.jsx', { cache: 'no-cache' });
+  const deckSrc = await deckRes.text();
+  const transpiled = Babel.transform(deckSrc, { presets: ['react'] }).code;
+  // eslint-disable-next-line no-new-func
+  new Function(transpiled)();
+
+  // Start engine after deck mounts + React commits. Use requestAnimationFrame
+  // chaining to let first paint settle so animations attach to real DOM.
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const sEngine = document.createElement('script');
+    sEngine.src = 'engine.js';
+    document.body.appendChild(sEngine);
+  }));
+})();
+</script>
+
+<deck-stage width="1920" height="1080">
+  <section data-label="Title"       id="s1"></section>
+  <section data-label="Why care"    id="s2"></section>
+  <section data-label="At a glance" id="s3"></section>
+  <section data-label="Taxonomy"    id="s4"></section>
+  <section data-label="Toolkits"    id="s5"></section>
+  <section data-label="Design"      id="s6"></section>
+  <section data-label="Control"     id="s7"></section>
+  <section data-label="Maintenance" id="s8"></section>
+  <section data-label="Tasks"       id="s9"></section>
+  <section data-label="Open"        id="s10"></section>
+  <section data-label="My take"     id="s11"></section>
+  <section data-label="Takeaways"   id="s12"></section>
+  <section data-label="Thanks"      id="s13"></section>
+</deck-stage>
+
+<div id="tweaks-root"></div>
+
+</body>
+</html>

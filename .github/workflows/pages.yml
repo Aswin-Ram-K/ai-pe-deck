@@ -1,0 +1,47 @@
+# Deploys the `public/` directory to GitHub Pages on every push to main.
+#
+# Only `public/` ships — the server/, Docker setup, and PPTX export
+# scripts are dev-only and don't need to be on the static CDN. The
+# deck is fully client-side: React/Babel from CDN, Web Speech API,
+# and a relative fetch of `speaker-notes.json`.
+name: Deploy deck to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  # Also allow manual re-deploy from the Actions tab.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one deployment at a time — if a newer push comes in while
+# the previous deploy is still running, cancel the old one.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload public/ as Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

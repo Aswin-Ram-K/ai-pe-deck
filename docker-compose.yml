@@ -1,0 +1,18 @@
+services:
+  deck:
+    build: .
+    container_name: ai-pe-deck
+    # Auto-detect-friendly: we pass a preferred port; server falls back.
+    environment:
+      PORT: "${PORT:-3000}"
+      # If you have the Claude CLI installed on the host, you can bind-mount
+      # it into the container and point CLAUDE_BIN at the mount path.
+      # CLAUDE_BIN: "/usr/local/bin/claude"
+    # Map a wide port range so auto-detect can pick a free one inside.
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"
+    volumes:
+      # Bind-mount public/ so Claude CLI edits on the host appear live.
+      - ./public:/app/public
+      - ./exports:/app/exports
+    restart: unless-stopped

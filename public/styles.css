@@ -1,0 +1,618 @@
+/* ─── Inverted galaxy: white field, deep indigo/blue highlights ─── */
+:root {
+  --accent: #0B3FB5;       /* deep blue primary */
+  --accent-2: #1E1B4B;     /* near-black indigo */
+  --accent-3: #5B6CFF;     /* lighter stellar blue */
+  --ink: #0A0A1F;          /* primary text — near-black with blue undertone */
+  --ink-2: #2A2A4A;        /* secondary text */
+  --ink-3: #6B6B85;        /* tertiary / captions */
+  --rule: #1A1A2E;         /* rules and borders */
+  --rule-soft: #D9DCE8;    /* soft dividers */
+  --bg: #FAFAF7;           /* off-white "inverted night" field */
+  --bg-2: #F2F2EC;         /* card shadow / panel */
+  --bg-3: #E8E8E0;         /* deeper card */
+  --star: #0A0A1F;         /* star color (inverted: dark dots on white) */
+  --heat-0: #EEEEF5;
+  --heat-1: #C8CDE8;
+  --heat-2: #8E9BD6;
+  --heat-3: #4858B0;
+  --heat-4: #1E1B4B;
+}
+
+html[data-theme="dark"] {
+  --ink: #F5F5F0;
+  --ink-2: #C8C8D4;
+  --ink-3: #8B8B9E;
+  --rule: #E8E8E0;
+  --rule-soft: #2A2A4A;
+  --bg: #050511;
+  --bg-2: #0D0D22;
+  --bg-3: #151532;
+  --star: #F5F5F0;
+  --accent: #5B6CFF;
+  --accent-2: #B8C0FF;
+  --accent-3: #8090FF;
+  --heat-0: #15152E;
+  --heat-1: #1F2148;
+  --heat-2: #394093;
+  --heat-3: #6A76D6;
+  --heat-4: #B8C0FF;
+}
+
+@font-face {
+  font-family: 'Fraunces-sub';
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: #000;
+  font-family: 'Inter Tight', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+.slide {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'Inter Tight', 'Inter', sans-serif;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Subtle star field — tiny dark dots, inverted from night sky.
+   Using radial-gradients at varying positions for randomness feel. */
+.starfield::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.55;
+  background-image:
+    radial-gradient(1px 1px at 8% 12%, var(--star) 50%, transparent 51%),
+    radial-gradient(1px 1px at 22% 68%, var(--star) 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 37% 24%, var(--star) 50%, transparent 51%),
+    radial-gradient(1px 1px at 49% 81%, var(--star) 50%, transparent 51%),
+    radial-gradient(1px 1px at 63% 18%, var(--star) 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 74% 55%, var(--star) 50%, transparent 51%),
+    radial-gradient(1px 1px at 88% 29%, var(--star) 50%, transparent 51%),
+    radial-gradient(1px 1px at 93% 74%, var(--star) 50%, transparent 51%),
+    radial-gradient(1px 1px at 14% 42%, var(--star) 50%, transparent 51%),
+    radial-gradient(1px 1px at 42% 52%, var(--star) 50%, transparent 51%),
+    radial-gradient(1px 1px at 56% 38%, var(--star) 50%, transparent 51%),
+    radial-gradient(1px 1px at 81% 88%, var(--star) 50%, transparent 51%),
+    radial-gradient(1px 1px at 19% 92%, var(--star) 50%, transparent 51%),
+    radial-gradient(1px 1px at 67% 72%, var(--star) 50%, transparent 51%),
+    radial-gradient(2px 2px at 33% 8%, var(--star) 50%, transparent 51%),
+    radial-gradient(1px 1px at 5% 60%, var(--star) 50%, transparent 51%),
+    radial-gradient(1px 1px at 95% 5%, var(--star) 50%, transparent 51%);
+}
+
+.starfield-dense::before {
+  opacity: 0.85;
+}
+
+/* A soft galactic "glow" — a large faint gradient behind content */
+.nebula::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 60% 40% at 20% 30%, color-mix(in oklch, var(--accent) 8%, transparent) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 35% at 80% 70%, color-mix(in oklch, var(--accent-2) 6%, transparent) 0%, transparent 60%);
+}
+
+/* Density tweak — when sparse, supporting bullet lists fade to caption style */
+html[data-density="sparse"] .supporting {
+  display: none;
+}
+html[data-density="sparse"] .supporting-strip {
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* ─── Animations ──────────────────────────────────────────────── */
+
+/* Everything with data-anim starts hidden. It reveals only when an
+   ancestor slide gets data-deck-active. Re-trigger on slidechange is
+   handled by briefly stripping & re-adding data-deck-active. */
+[data-anim] {
+  opacity: 0;
+  will-change: opacity, transform;
+  animation-fill-mode: both !important;
+  animation-play-state: paused;
+}
+[data-deck-active] [data-anim] {
+  animation-play-state: running;
+}
+
+/* Fade + rise */
+@keyframes fadeRise {
+  from { opacity: 0; transform: translate3d(0, 24px, 0); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+[data-anim="rise"] {
+  animation: fadeRise 720ms cubic-bezier(.2,.7,.2,1) both;
+}
+
+/* Soft fade */
+@keyframes softFade { from { opacity: 0; } to { opacity: 1; } }
+[data-anim="fade"] {
+  animation: softFade 900ms ease-out both;
+}
+
+/* Per-letter title reveal */
+.split-char {
+  display: inline-block;
+  opacity: 0;
+  transform: translate3d(0, 0.9em, 0) skewY(3deg);
+  animation: charReveal 720ms cubic-bezier(.2,.8,.2,1) both;
+  animation-play-state: paused;
+}
+[data-deck-active] .split-char { animation-play-state: running; }
+@keyframes charReveal {
+  0%   { opacity: 0; transform: translate3d(0, 0.9em, 0) skewY(3deg); }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: translate3d(0, 0, 0) skewY(0); }
+}
+.split-word { display: inline-block; white-space: pre; }
+
+/* Horizontal wipe — for bars, rules, accents */
+[data-anim="wipe"] {
+  animation: wipeIn 900ms cubic-bezier(.7,0,.3,1) both;
+  transform-origin: left center;
+}
+@keyframes wipeIn {
+  from { opacity: 1; transform: scaleX(0); }
+  to   { opacity: 1; transform: scaleX(1); }
+}
+
+/* Vertical wipe — for tier blocks */
+[data-anim="wipe-down"] {
+  animation: wipeDown 700ms cubic-bezier(.7,0,.3,1) both;
+  transform-origin: top center;
+}
+@keyframes wipeDown {
+  from { opacity: 1; transform: scaleY(0); }
+  to   { opacity: 1; transform: scaleY(1); }
+}
+
+/* Pop-in — for matrix cells, bullets */
+@keyframes popIn {
+  0%   { opacity: 0; transform: scale(0.4); }
+  60%  { opacity: 1; transform: scale(1.05); }
+  100% { opacity: 1; transform: scale(1); }
+}
+[data-anim="pop"] {
+  animation: popIn 560ms cubic-bezier(.3,1.4,.4,1) both;
+}
+
+/* Count-up helper (handled in JS) */
+.counter { display: inline-block; }
+
+/* Donut sweep — uses CSS mask on the SVG wrapper */
+.donut-wrap {
+  opacity: 0;
+  animation: donutFadeIn 400ms ease-out forwards;
+  animation-delay: 400ms;
+  animation-play-state: paused;
+}
+[data-deck-active] .donut-wrap { animation-play-state: running; }
+@keyframes donutFadeIn { to { opacity: 1; } }
+
+.donut-slice {
+  stroke-dasharray: var(--dash);
+  stroke-dashoffset: var(--dash);
+  animation: drawSlice 900ms cubic-bezier(.5,.05,.2,1) both;
+  animation-play-state: paused;
+}
+[data-deck-active] .donut-slice { animation-play-state: running; }
+@keyframes drawSlice {
+  to { stroke-dashoffset: 0; }
+}
+
+/* Progress bar fill (maintenance timeline) */
+.progress-fill {
+  transform: scaleX(0);
+  transform-origin: left center;
+  animation: fillProgress 1100ms cubic-bezier(.4,0,.2,1) both;
+  animation-play-state: paused;
+}
+[data-deck-active] .progress-fill { animation-play-state: running; }
+@keyframes fillProgress { to { transform: scaleX(1); } }
+
+/* ─── Domain-specific animation primitives ───────────────────────── */
+
+/* Stroke-trace — draws an SVG path from start to end.
+   Set --len = path length (via pathLength="1000" or measured) and
+   --trace-dur on the element. Used for PWM waveforms, Pareto curves,
+   control-loop signal arrows, sparklines. */
+.trace {
+  stroke-dasharray: var(--len, 1000);
+  stroke-dashoffset: var(--len, 1000);
+  animation: traceDraw var(--trace-dur, 1400ms) cubic-bezier(.5,.05,.2,1) both;
+  animation-play-state: paused;
+}
+[data-deck-active] .trace { animation-play-state: running; }
+@keyframes traceDraw { to { stroke-dashoffset: 0; } }
+
+/* Sparkline — endless left-to-right sweep (seed + loop). Used for live
+   sensor data. The inner path uses transform translateX to scroll. */
+.sparkline-sweep {
+  animation: sparkSweep 3200ms linear infinite;
+  animation-play-state: paused;
+}
+[data-deck-active] .sparkline-sweep { animation-play-state: running; }
+@keyframes sparkSweep {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+/* Soft pulse — for "live" feel on status dots, the active cell in a matrix,
+   neural-net activations. */
+.pulse-dot {
+  animation: pulseDot 1600ms ease-in-out infinite;
+  animation-play-state: paused;
+  transform-origin: center center;
+}
+[data-deck-active] .pulse-dot { animation-play-state: running; }
+@keyframes pulseDot {
+  0%, 100% { opacity: 0.45; transform: scale(1); }
+  50%      { opacity: 1;    transform: scale(1.35); }
+}
+
+/* Synapse flash — a bright glow that walks along neural-net edges. */
+.synapse {
+  animation: synapseFlash 2400ms linear infinite;
+  animation-play-state: paused;
+}
+[data-deck-active] .synapse { animation-play-state: running; }
+@keyframes synapseFlash {
+  0%   { stroke-dashoffset: 200; opacity: 0; }
+  20%  { opacity: 1; }
+  80%  { opacity: 1; }
+  100% { stroke-dashoffset: 0;   opacity: 0; }
+}
+
+/* Float drift — for particles/dots that should feel alive without being
+   distracting. Randomized per-element via CSS custom props (--dx,--dy). */
+.drift {
+  animation: driftFloat var(--drift-dur, 6s) ease-in-out infinite alternate;
+  animation-play-state: paused;
+}
+[data-deck-active] .drift { animation-play-state: running; }
+@keyframes driftFloat {
+  from { transform: translate(0,0); }
+  to   { transform: translate(var(--dx, 4px), var(--dy, -3px)); }
+}
+
+/* Scatter-to-front — Pareto/paper-cluster candidate dot.
+ *
+ * TWO animations chained:
+ *   (1) candidateIn — one-shot entrance (fade + scale up)
+ *   (2) candidateIdle — INFINITE breathing + drift, kicks in after (1)
+ *
+ * Per-element tunables (CSS vars):
+ *   --d           entrance delay (ms)
+ *   --final-opacity   settled opacity (0..1)
+ *   --dx, --dy    idle drift vector (px)      default 0
+ *   --idle-dur    idle animation duration      default 5.5s
+ *   --idle-scale  extra scale at idle peak     default 0.05
+ *   --idle-opacity-boost  extra opacity at peak (0..1) default 0.12
+ *
+ * Both animations are paused unless the slide is active, so nothing
+ * runs off-screen. */
+.candidate-dot {
+  opacity: 0;
+  transform-origin: center;
+  will-change: transform, opacity;
+  animation:
+    candidateIn 700ms cubic-bezier(.25,1,.3,1) var(--d, 0ms) forwards,
+    candidateIdle var(--idle-dur, 5.5s) ease-in-out calc(var(--d, 0ms) + 700ms) infinite alternate;
+  animation-play-state: paused;
+}
+[data-deck-active] .candidate-dot { animation-play-state: running; }
+@keyframes candidateIn {
+  from { opacity: 0; transform: scale(0.3) translate(0, 0); }
+  to   { opacity: var(--final-opacity, 0.55); transform: scale(1) translate(0, 0); }
+}
+@keyframes candidateIdle {
+  from {
+    opacity: var(--final-opacity, 0.55);
+    transform: scale(1) translate(0, 0);
+  }
+  to {
+    opacity: calc(var(--final-opacity, 0.55) + var(--idle-opacity-boost, 0.12));
+    transform:
+      scale(calc(1 + var(--idle-scale, 0.05)))
+      translate(var(--dx, 0px), var(--dy, 0px));
+  }
+}
+
+/* PWM scan-line — thin vertical bar sweeps left-to-right across the
+ * waveform after the trace finishes drawing. Pure transform translateX.
+ * Per-element: --sweep-dist (px width to sweep) */
+.pwm-scan {
+  animation: pwmScanSweep 3000ms linear infinite;
+  animation-play-state: paused;
+  animation-delay: 2400ms; /* wait for the slower SiC trace to finish */
+}
+[data-deck-active] .pwm-scan { animation-play-state: running; }
+@keyframes pwmScanSweep {
+  0%   { transform: translateX(0);                         opacity: 0; }
+  8%   { opacity: 0.9; }
+  92%  { opacity: 0.9; }
+  100% { transform: translateX(var(--sweep-dist, 720px));  opacity: 0; }
+}
+
+/* RUL uncertainty band — subtle breathing. Use two nearly-identical
+ * paths with opacity/filter-shift on alternate cycles. */
+.rul-breathe {
+  transform-origin: center;
+  animation: rulBreathe 4800ms ease-in-out infinite alternate;
+  animation-play-state: paused;
+  animation-delay: 2200ms;
+}
+[data-deck-active] .rul-breathe { animation-play-state: running; }
+@keyframes rulBreathe {
+  from { opacity: 0.45; transform: scaleY(0.94); }
+  to   { opacity: 0.85; transform: scaleY(1.05); }
+}
+
+/* Live "head" dot on a sparkline — pulses at the right edge */
+.spark-head {
+  transform-origin: center;
+  animation: sparkHeadPulse 1400ms ease-in-out infinite;
+  animation-play-state: paused;
+}
+[data-deck-active] .spark-head { animation-play-state: running; }
+@keyframes sparkHeadPulse {
+  0%, 100% { transform: scale(1);   opacity: 0.7; }
+  50%      { transform: scale(1.6); opacity: 1; }
+}
+
+/* ─── Tile reveal flash (C3) ─────────────────────────────────────
+ * Elements tagged `data-tile` get a one-shot accent-glow flash that
+ * fires shortly after they pop in. Nothing after it — this is the
+ * "reveal only" variant (no idle float, no idle pulse).
+ *
+ * Per-element tunable:
+ *   --flash-delay   when the flash starts (ms). Default 1000ms.
+ *
+ * The glow is drawn via a ::after pseudo so we don't trample layout.
+ * Parent must be position:relative (we force it). */
+[data-tile] {
+  position: relative;
+}
+[data-tile]::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow:
+    0 0 70px 4px color-mix(in oklch, var(--accent) 55%, transparent),
+    inset 0 0 40px 0 color-mix(in oklch, var(--accent) 22%, transparent);
+  opacity: 0;
+  animation: tileFlash 1100ms cubic-bezier(.2,.7,.2,1) both;
+  animation-play-state: paused;
+  animation-delay: var(--flash-delay, 1000ms);
+}
+[data-deck-active] [data-tile]::after { animation-play-state: running; }
+@keyframes tileFlash {
+  0%   { opacity: 0; }
+  25%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* ─── Slide-to-slide transition (D) ──────────────────────────────
+ * When a slide is leaving, we override deck-stage's instant hide so
+ * the slide stays visible while its children animate out (upward +
+ * fade). deck-stage's shadow-DOM ::slotted() rule targets *; our
+ * light-DOM selector with an attribute has higher specificity and
+ * wins without !important. */
+deck-stage > section[data-deck-leaving] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: none;
+  z-index: 2;
+}
+deck-stage > section[data-deck-active] {
+  z-index: 1;
+}
+
+/* ─── Scatterboard transition variants ───────────────────────────
+ *
+ * Every transitioning element gets exactly one exit variant + one
+ * matching enter variant, picked in JS by element kind. Variants:
+ *
+ *   fade-up      default — rise/fall + fade         (body content, decor)
+ *   scale        card/tile — scale 1 ↔ 0.92 + fade  (tiles, panels)
+ *   slide-left   headline exit → left               (H1/H2 exits)
+ *   slide-right  headline enter ← from left         (H1/H2 enters)
+ *   slide-up     top-anchored exit ↑ (chapter mark) / bottom-anchored enter ↑ (footer)
+ *   slide-down   top-anchored enter ↓ (chapter mark) / bottom-anchored exit ↓ (footer)
+ *   pop          [data-anim="pop"] authored intent
+ *   unblur/blur  reserved for decorative/background layers
+ *
+ * Durations deliberately vary per variant so no two elements finish
+ * at the same instant — that's what sells the Scatterboard feel.
+ * Stagger is assigned from JS as inline `animation-delay`. */
+
+/* EXITS */
+.deck-exit-fade-up    { animation: exitFadeUp 420ms cubic-bezier(.55,0,.3,1) forwards; }
+.deck-exit-scale      { animation: exitScale 380ms cubic-bezier(.5,0,.75,.3) forwards; }
+.deck-exit-slide-left { animation: exitSlideLeft 460ms cubic-bezier(.65,0,.3,1) forwards; }
+.deck-exit-slide-up   { animation: exitSlideUp 400ms cubic-bezier(.5,0,.3,1) forwards; }
+.deck-exit-slide-down { animation: exitSlideDown 400ms cubic-bezier(.5,0,.3,1) forwards; }
+.deck-exit-pop        { animation: exitPop 340ms cubic-bezier(.7,0,.3,.2) forwards; }
+.deck-exit-blur       { animation: exitBlur 440ms ease-out forwards; }
+
+@keyframes exitFadeUp    { to { opacity: 0; transform: translateY(-28px); } }
+@keyframes exitScale     { to { opacity: 0; transform: scale(0.92); } }
+@keyframes exitSlideLeft { to { opacity: 0; transform: translateX(-72px); } }
+@keyframes exitSlideUp   { to { opacity: 0; transform: translateY(-44px); } }
+@keyframes exitSlideDown { to { opacity: 0; transform: translateY(44px); } }
+@keyframes exitPop       { to { opacity: 0; transform: scale(0.4); } }
+@keyframes exitBlur      { to { opacity: 0; filter: blur(8px); } }
+
+/* ENTERS — mirror-reversed */
+.deck-enter-fade-up     { animation: enterFadeUp 520ms cubic-bezier(.2,.7,.2,1) both; }
+.deck-enter-scale       { animation: enterScale 500ms cubic-bezier(.25,1.05,.3,1) both; }
+.deck-enter-slide-right { animation: enterSlideRight 560ms cubic-bezier(.2,.7,.2,1) both; }
+.deck-enter-slide-down  { animation: enterSlideDown 520ms cubic-bezier(.2,.7,.2,1) both; }
+.deck-enter-slide-up    { animation: enterSlideUp 520ms cubic-bezier(.2,.7,.2,1) both; }
+.deck-enter-pop         { animation: enterPop 520ms cubic-bezier(.2,1.35,.3,1) both; }
+.deck-enter-unblur      { animation: enterUnblur 520ms ease-out both; }
+
+@keyframes enterFadeUp     { from { opacity: 0; transform: translateY(28px); }  to { opacity: 1; transform: translateY(0); } }
+@keyframes enterScale      { from { opacity: 0; transform: scale(0.92); }       to { opacity: 1; transform: scale(1); } }
+@keyframes enterSlideRight { from { opacity: 0; transform: translateX(-72px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes enterSlideDown  { from { opacity: 0; transform: translateY(-44px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes enterSlideUp    { from { opacity: 0; transform: translateY(44px); }  to { opacity: 1; transform: translateY(0); } }
+@keyframes enterPop        { from { opacity: 0; transform: scale(0.4); }        to { opacity: 1; transform: scale(1); } }
+@keyframes enterUnblur     { from { opacity: 0; filter: blur(8px); }            to { opacity: 1; filter: blur(0); } }
+
+/* When a slide is freshly activated but we're still waiting for the
+ * browser to paint it + giving the user a visual buffer before the
+ * entrance animations begin, we add `.deck-priming` to the slide.
+ * It pauses every data-anim animation so the CSS timeline doesn't
+ * advance before the user has seen a single frame of the new slide.
+ *
+ * Without this, on heavy slides (sparklines, Pareto scatter) the
+ * paint arrives AFTER the animations have already progressed, so
+ * the first visible frame shows them mid-flight or complete.
+ * `!important` beats the `[data-deck-active] [data-anim]` rule
+ * (same specificity) to guarantee the pause. */
+.deck-priming [data-anim] {
+  animation-play-state: paused !important;
+}
+/* Also freeze sub-element animations that otherwise auto-start on
+ * [data-deck-active]. */
+.deck-priming .split-char,
+.deck-priming .candidate-dot,
+.deck-priming .pulse-dot,
+.deck-priming .synapse,
+.deck-priming .drift,
+.deck-priming .trace,
+.deck-priming .sparkline-sweep,
+.deck-priming .signal-packet,
+.deck-priming .progress-fill,
+.deck-priming .donut-slice,
+.deck-priming .donut-wrap,
+.deck-priming .pwm-scan,
+.deck-priming .rul-breathe,
+.deck-priming .spark-head,
+.deck-priming .glow-ring,
+.deck-priming [data-tile]::after {
+  animation-play-state: paused !important;
+}
+
+/* Once an element has finished its enter transition, we pin this
+ * class on it. It suppresses any CSS animation (particularly the
+ * [data-anim] entrance rules) so the browser doesn't re-trigger
+ * those when the enter class is removed — the animation-name
+ * change would otherwise cause the element to replay its native
+ * data-anim entrance from scratch (visible jitter / duplication).
+ *
+ * Without `animation: none`, the [data-anim] rule would re-apply
+ * `animation: fadeRise 720ms` → restart. Without the opacity /
+ * transform / filter pins, killing the animation lets the element
+ * fall back to the [data-anim] base state (opacity: 0) and the
+ * element VANISHES. So we must also lock the "arrived" visual.
+ *
+ * The pin is cleared by animateExit before the next transition so
+ * exit animations play normally, and cleared by restart() so R on
+ * the same slide still replays the full entrance. */
+.deck-arrived {
+  animation: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+  filter: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [class^="deck-exit-"], [class*=" deck-exit-"],
+  [class^="deck-enter-"], [class*=" deck-enter-"] {
+    animation-duration: 1ms !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-tile]::after { display: none; }
+  .deck-leaving-anim { animation-duration: 1ms; }
+}
+
+/* Glow ring — subtle radial glow behind focal elements (title numerals,
+   key diagrams). Animated scale + fade. */
+.glow-ring {
+  animation: glowPulse 3600ms ease-in-out infinite;
+  animation-play-state: paused;
+  transform-origin: center center;
+  pointer-events: none;
+}
+[data-deck-active] .glow-ring { animation-play-state: running; }
+@keyframes glowPulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.9); }
+  50%      { opacity: 0.8;  transform: scale(1.08); }
+}
+
+/* Signal-packet — small bright dot that travels along a SVG path via
+   CSS offset-path. Used on the control-loop and maintenance pipelines. */
+.signal-packet {
+  offset-path: var(--path);
+  offset-rotate: auto;
+  animation: packetFlow var(--packet-dur, 2600ms) linear infinite;
+  animation-play-state: paused;
+}
+[data-deck-active] .signal-packet { animation-play-state: running; }
+@keyframes packetFlow {
+  from { offset-distance: 0%; opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  to   { offset-distance: 100%; opacity: 0; }
+}
+
+/* Rising bar — for projection/bar charts. Uses transform scaleY. */
+.rise-bar {
+  transform: scaleY(0);
+  transform-origin: bottom center;
+  animation: riseBar 1100ms cubic-bezier(.25,1,.3,1) both;
+  animation-play-state: paused;
+}
+[data-deck-active] .rise-bar { animation-play-state: running; }
+@keyframes riseBar { to { transform: scaleY(1); } }
+
+/* Shimmer — thin diagonal light band moves across a surface; used to
+   hint at "live/processing" without being noisy. */
+.shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 35%,
+    color-mix(in oklch, var(--accent) 40%, transparent) 50%, transparent 65%);
+  mix-blend-mode: overlay;
+  animation: shimmerSweep 3200ms ease-in-out infinite;
+  animation-play-state: paused;
+  pointer-events: none;
+}
+[data-deck-active] .shimmer::after { animation-play-state: running; }
+@keyframes shimmerSweep {
+  from { transform: translateX(-110%); }
+  to   { transform: translateX(110%); }
+}
+
+/* Respect prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  [data-anim], .split-char, .donut-slice, .progress-fill, .donut-wrap,
+  .trace, .sparkline-sweep, .pulse-dot, .synapse, .drift, .candidate-dot,
+  .glow-ring, .signal-packet, .rise-bar {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    transform: none !important;
+    opacity: 1 !important;
+  }
+  .shimmer::after { display: none; }
+}

@@ -1,0 +1,15 @@
+node_modules/
+exports/*.pptx
+exports/*.pdf
+.DS_Store
+npm-debug.log*
+.env
+.env.local
+
+# Screenshot work-dir used during dev / PPTX export
+_shots/
+
+# Editor / tool metadata
+.claude/
+.vscode/
+.idea/

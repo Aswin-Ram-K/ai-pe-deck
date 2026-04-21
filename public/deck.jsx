@@ -1235,16 +1235,21 @@ function SlideIntro() {
               // Slight dim when fully collapsed (compressed point)
               vAlpha *= 1.0 - 0.35 * uCollapse;
             } else {
-              // Ejecta — radiate outward from sphere surface over 2.2s.
+              // Ejecta — particles radiate outward from ORIGIN (where the
+              // singularity just sat). Smooth continuity with the
+              // collapsed state (which had pos ≈ aDir * 0.02). No teleport.
               float dist = t * aSpeed * (1.0 - 0.3 * smoothstep(0.0, 2.2, t));
-              pos = aDir * (0.5 + dist);
-              vAlpha = (1.0 - smoothstep(0.2, 2.2, t)) * smoothstep(0.0, 0.06, t);
+              pos = aDir * dist;
+              vAlpha = (1.0 - smoothstep(0.4, 2.2, t)) * smoothstep(0.0, 0.08, t);
             }
             vec4 mv = modelViewMatrix * vec4(pos, 1.0);
             gl_Position = projectionMatrix * mv;
-            // Idle size slightly larger for cloud-cohesion; during ejecta
-            // shrinks as particles travel (existing behavior).
-            float baseSize = (t < 0.0) ? 5.5 : (3.5 + (1.0 - smoothstep(0.0, 2.2, t)) * 5.0);
+            // Idle size 5.5 for nebular cloud density. During ejecta,
+            // particles shrink to minute "light-like" specks — starts at
+            // 3.0 (already smaller than idle, for a clean release), tapers
+            // to 1.5 at full expansion so the explosion trails off as a
+            // distant starfield rather than chunky fragments.
+            float baseSize = (t < 0.0) ? 5.5 : (3.0 - 1.5 * smoothstep(0.0, 2.2, t));
             gl_PointSize = baseSize * uDPR;
           }
         `,

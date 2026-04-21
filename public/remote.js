@@ -24,7 +24,7 @@
 
   /* Bumps per deploy so iOS Safari can't serve cached assets after
    * we ship a fix. Seen as ?v=<stamp> on remote.js + speaker-script.json. */
-  const BUILD_VERSION = '20260421-abbr-legend';
+  const BUILD_VERSION = '20260421-10s-countdown';
 
   /* Total presentation budget used by the "Total" countdown in the
    * timer strip. Starts the moment the teleprompter lands on a
@@ -52,8 +52,8 @@
    * can verify without a Mac-tethered DevTools session. */
   const DEBUG = new URLSearchParams(location.search).get('debug') === '1';
 
-  /* Countdown length in seconds. 5 per spec. */
-  const COUNTDOWN_SEC = 5;
+  /* Countdown length in seconds before the cosmic intro fires. */
+  const COUNTDOWN_SEC = 10;
 
   let peer = null;
   let conn = null;
@@ -270,7 +270,10 @@
   }
 
   function numberWord(n) {
-    return { 5:'five', 4:'four', 3:'three', 2:'two', 1:'one' }[n] || String(n);
+    return {
+      10:'ten', 9:'nine', 8:'eight', 7:'seven', 6:'six',
+      5:'five', 4:'four', 3:'three', 2:'two', 1:'one',
+    }[n] || String(n);
   }
 
   function playTone(hz, durSec) {

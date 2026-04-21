@@ -1228,12 +1228,13 @@ function SlideIntro() {
               pos = aDir * r + driftActive;
 
               // Alpha breathes gently + brightens on the leading edge of
-              // each wave (positive-phase crests more visible). Higher
-              // base alpha + stronger crest = denser, more cloud-like feel.
+              // each wave (positive-phase crests more visible).
               float crest = max(0.0, wave / max(uPulseAmp, 0.001));
               vAlpha = 0.65 + 0.28 * sin(driftPhase * 0.5 + seed) + 0.30 * crest;
-              // Slight dim when fully collapsed (compressed point)
-              vAlpha *= 1.0 - 0.35 * uCollapse;
+              // Fade entire cloud to invisible as it collapses — prevents
+              // the "6000 particles stacked at origin" clump frame.
+              // Curve squared so fade accelerates toward the end of implosion.
+              vAlpha *= pow(1.0 - uCollapse, 2.0);
             } else {
               // Ejecta — particles radiate outward from ORIGIN (where the
               // singularity just sat). Smooth continuity with the

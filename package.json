@@ -7,7 +7,8 @@
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "export:pptx": "node server/scripts/export-pptx.js",
-    "export:notes-pdf": "node server/scripts/export-notes-pdf.js"
+    "export:notes-pdf": "node server/scripts/export-notes-pdf.js",
+    "build:script": "node server/scripts/build-script-json.js"
   },
   "dependencies": {
     "express": "^4.19.2",
@@ -16,5 +17,8 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "mammoth": "^1.12.0"
   }
 }

@@ -28,18 +28,44 @@
 const INTRO_EXPLODE_TO_NEXT_MS = 10800;  // start tap → deck.next() fires (end of settled hold)
 const INTRO_TOTAL_BUDGET_MS    = 12600;  // start tap → slide 1 fully arrived (+1.8s first-slide enter)
 
-/* Cosmic-ambient pacing (deck-side audio bed synced to the visual
- * state machine in SlideIntro). Times are seconds relative to the
- * explode moment (AudioContext.currentTime basis).
- *   • fade-in covers the 3.5s tensioning phase
- *   • shimmer bell starts 0.5s before the flash for anticipation
- *   • whoosh hits ON the flash frame (t = 6.45)
- *   • release begins as deck.next() fires at 10.80s, 1.8s fall
- *     covers the slide 1 scatterboard enter (ends at 12.60s)
+/* Cosmic big-bang soundtrack (deck-side, classroom speakers) — a
+ * multi-layer cinematic sequence synchronized to the visual phase
+ * machine in SlideIntro. Times are seconds relative to the explode
+ * moment (AudioContext.currentTime basis). Design references:
+ *   · Pixflow / Motion Array / Ableton cinematic-impact guides —
+ *     three-part structure (build-up → impact → tail), frequency
+ *     layering (sub 40-120Hz + mid body + hi 2-5kHz transient).
+ *   · "Tenet" (2020) reverse-swell technique — short reversed-noise
+ *     cue ending AT the impact creates "negative attack."
+ *   · MDN WebAudio "advanced techniques" — exponentialRampToValueAtTime
+ *     on oscillator frequency for percussive descending sweeps
+ *     (120 → 30 Hz pattern for sub-kicks), FM for tonal impacts.
+ *
+ * Phase map (seconds from explode):
+ *   0.00 -  3.50  tensioning   — bed fades in; sub-bass pulse + pad
+ *                                 wobble track visual pulse freq
+ *   3.50 -  6.00  intensifying — pulse/wobble race 0.8 → 18 Hz;
+ *                                 tension riser (noise+tone) builds
+ *   6.00 -  6.35  imploding    — reverse swell (bandpass 4500→300Hz)
+ *   6.35 -  6.45  held         — sidechain duck to 0.20; "held breath"
+ *   6.45 -  6.70  flashing     — IMPACT STACK (5 layers) hits together
+ *   6.70 -  7.80  ejecta       — impact roar tail continues
+ *   7.80 - 10.50  erupt        — tail + reverb settle
+ *  10.50 - 10.80  settled
+ *  10.80 - 12.60  enter (slide 1) — release begins at 10.80, 1.8s fall
  */
-const AMBIENT_FADE_IN_SEC          = 3.0;
+const AMBIENT_FADE_IN_SEC          = 5.5;    // longer, softer fade
+const AMBIENT_SUSTAIN_GAIN         = 0.16;   // lower bed loudness (was 0.26)
+const AMBIENT_WOBBLE_END_SEC       = 6.0;    // 0.8 → 18 Hz ramp ends (matches SlideIntro pulse wave)
+const AMBIENT_WOBBLE_DEPTH_MAX     = 0.14;   // pad AM depth at impact approach
+const AMBIENT_RISER_START_SEC      = 3.5;    // intensifying phase begins
+const AMBIENT_IMPLODE_START_SEC    = 6.0;    // reverse swell begins
+const AMBIENT_DUCK_START_SEC       = 6.20;   // bed starts ducking before held
+const AMBIENT_DUCK_HOLD_START_SEC  = 6.35;   // held phase begins (duck at depth)
+const AMBIENT_DUCK_HOLD_END_SEC    = 6.40;
+const AMBIENT_DUCK_DEPTH           = 0.20;   // -14dB duck during held singularity
 const AMBIENT_SHIMMER_SEC          = 5.95;
-const AMBIENT_WHOOSH_SEC           = 6.45;
+const AMBIENT_IMPACT_SEC           = 6.45;   // flash frame — impact stack fires
 const AMBIENT_RELEASE_AT_MS        = 10800;
 const AMBIENT_RELEASE_DURATION_SEC = 1.8;
 
@@ -59,20 +85,25 @@ const AMBIENT_RELEASE_DURATION_SEC = 1.8;
   let peerReady = false;
   const conns = new Set();
 
-  /* ─── Cosmic-ambient audio (deck-side, classroom speakers) ─────────
+  /* ─── Cosmic big-bang audio (deck-side, classroom speakers) ──────
    * AudioContext can't be opened until a user gesture. We listen
    * once on pointer/key/touch and lazily create the ctx. Presenter
-   * will typically click or press a key on the deck window (enter
-   * fullscreen, focus, etc.) before tapping BIG BANG on the phone.
-   * If no gesture has occurred by the time 'start' arrives, the
-   * visual cosmic still runs — only the ambient is silent. */
+   * will typically click or press a key on the deck window before
+   * tapping BIG BANG on the phone. Visual cosmic still runs if the
+   * gesture was missed — only the audio is silent.
+   *
+   * All orchestration is triggered by `startCosmicBigBang()`, which
+   * schedules every layer relative to the explode moment using
+   * AudioContext.currentTime offsets (sample-accurate). See the
+   * constants block above for the phase map. */
   let deckAudioCtx = null;
   const cosmicAmbient = {
     active: false,
-    masterGain: null,
+    masterGain: null,   // global fade envelope (tracks fade-in + release)
+    duckGain: null,     // sidechain-style duck engaged during "held" phase
     dryBus: null,
     revInput: null,
-    nodes: [],           // oscillators + LFOs held for cleanup
+    nodes: [],          // every source + routing node — held for cleanup
     cleanupTimer: null,
   };
 
@@ -89,62 +120,90 @@ const AMBIENT_RELEASE_DURATION_SEC = 1.8;
     });
   }
 
-  /* Ethereal bed — sub drone (A1) + pad chord (A3/E4/A4 detuned sines,
-   * 0.15Hz breathing) + dual-delay "space" reverb. Layers build over
-   * AMBIENT_FADE_IN_SEC so the audio rises under the cosmic tensioning
-   * phase rather than slamming in at zero. */
-  function startCosmicAmbient() {
-    if (!deckAudioCtx || cosmicAmbient.active) return;
-    cosmicAmbient.active = true;
-
-    const ctx = deckAudioCtx;
-    const now = ctx.currentTime;
-    const SUSTAIN_GAIN = 0.26;  // classroom speakers; leaves headroom under presenter's voice
-
-    // Master bus — soft exponential fade-in
+  /* ── Buses + reverb ──
+   * Signal chain:   sources  →  dry/wet  →  master  →  duckGain  →  destination
+   *                 impact   →  impactBus → destination  (bypasses duck for full volume)
+   *
+   * Reverb: two DECOUPLED delay lines, each with its own lowpass in
+   * its OWN feedback loop. Previous design cross-coupled both delays
+   * through a shared LPF (open-loop gain ≈ 0.88 — marginally stable
+   * — which accumulated energy at comb-filter modes and produced a
+   * slow-building "whine" that got stuck. Decoupled, each path has
+   * self-feedback 0.40; safely under 1.0 at every frequency. */
+  function _buildAmbientBuses(ctx, t0) {
     const master = ctx.createGain();
-    master.gain.setValueAtTime(0.0001, now);
-    master.gain.exponentialRampToValueAtTime(SUSTAIN_GAIN, now + AMBIENT_FADE_IN_SEC);
-    master.connect(ctx.destination);
+    master.gain.setValueAtTime(0.0001, t0);
+    master.gain.exponentialRampToValueAtTime(AMBIENT_SUSTAIN_GAIN, t0 + AMBIENT_FADE_IN_SEC);
 
-    // Parallel dry + wet buses
-    const dryBus = ctx.createGain(); dryBus.gain.value = 1.0; dryBus.connect(master);
-    const wetBus = ctx.createGain(); wetBus.gain.value = 0.40; wetBus.connect(master);
+    const duck = ctx.createGain();
+    duck.gain.value = 1.0;
 
-    // Cheap dual-delay space reverb (two prime-ish taps, lowpassed feedback)
+    master.connect(duck);
+    duck.connect(ctx.destination);
+
+    const dryBus = ctx.createGain(); dryBus.gain.value = 1.0;  dryBus.connect(master);
+    const wetBus = ctx.createGain(); wetBus.gain.value = 0.38; wetBus.connect(master);
+
     const revInput = ctx.createGain();
-    const d1 = ctx.createDelay(1.0); d1.delayTime.value = 0.137;
-    const d2 = ctx.createDelay(1.0); d2.delayTime.value = 0.197;
-    const fbLP = ctx.createBiquadFilter();
-    fbLP.type = 'lowpass'; fbLP.frequency.value = 2600;
-    const fb1 = ctx.createGain(); fb1.gain.value = 0.44;
-    const fb2 = ctx.createGain(); fb2.gain.value = 0.44;
-    revInput.connect(d1); revInput.connect(d2);
-    d1.connect(fb1); fb1.connect(fbLP); fbLP.connect(d1);
-    d2.connect(fb2); fb2.connect(fbLP); fbLP.connect(d2);
-    d1.connect(wetBus); d2.connect(wetBus);
 
-    // ── Layer 1: Sub drone — A1 saw pair (55, 55.5 Hz), lowpassed ──
-    const subLP = ctx.createBiquadFilter();
+    // Delay 1 — 137ms tap with its OWN self-feedback + LPF
+    const d1  = ctx.createDelay(1.0); d1.delayTime.value = 0.137;
+    const fb1 = ctx.createGain();     fb1.gain.value = 0.40;
+    const lp1 = ctx.createBiquadFilter();
+    lp1.type = 'lowpass'; lp1.frequency.value = 2400;
+    revInput.connect(d1); d1.connect(fb1); fb1.connect(lp1); lp1.connect(d1);
+    d1.connect(wetBus);
+
+    // Delay 2 — 197ms tap, independent self-feedback + LPF
+    const d2  = ctx.createDelay(1.0); d2.delayTime.value = 0.197;
+    const fb2 = ctx.createGain();     fb2.gain.value = 0.40;
+    const lp2 = ctx.createBiquadFilter();
+    lp2.type = 'lowpass'; lp2.frequency.value = 2400;
+    revInput.connect(d2); d2.connect(fb2); fb2.connect(lp2); lp2.connect(d2);
+    d2.connect(wetBus);
+
+    cosmicAmbient.masterGain = master;
+    cosmicAmbient.duckGain = duck;
+    cosmicAmbient.dryBus = dryBus;
+    cosmicAmbient.revInput = revInput;
+    cosmicAmbient.nodes.push(master, duck, dryBus, wetBus, revInput,
+                             d1, fb1, lp1, d2, fb2, lp2);
+  }
+
+  /* ── Ambient bed: A1 sub drone + A3/E4/A4 pad ──
+   * The pad's AM LFO frequency tracks the visual pulse-wave: 0.8 Hz
+   * at t0 ramping exponentially to 18 Hz at t0+6s. This makes the
+   * pad "wobble with the fabric of spacetime" — the visual tremor
+   * and the audio tremor ARE the same thing. LFO depth also grows
+   * (0.04 → AMBIENT_WOBBLE_DEPTH_MAX) so the wobble becomes more
+   * pronounced as the tension builds, then releases after impact. */
+  function _buildCosmicBed(ctx, t0) {
+    const dryBus = cosmicAmbient.dryBus;
+    const revInput = cosmicAmbient.revInput;
+
+    // Sub drone (A1) — dry only; reverb on low freq muddies
+    const subLP  = ctx.createBiquadFilter();
     subLP.type = 'lowpass'; subLP.frequency.value = 180; subLP.Q.value = 0.5;
     const subSum = ctx.createGain(); subSum.gain.value = 0.55;
-    subLP.connect(subSum); subSum.connect(dryBus);  // sub stays dry — reverb muddies lows
+    subLP.connect(subSum); subSum.connect(dryBus);
+    cosmicAmbient.nodes.push(subLP, subSum);
     [55.0, 55.5].forEach((hz) => {
       const osc = ctx.createOscillator();
       osc.type = 'sawtooth';
       osc.frequency.value = hz;
       osc.connect(subLP);
-      osc.start(now);
+      osc.start(t0);
       cosmicAmbient.nodes.push(osc);
     });
 
-    // ── Layer 2: Pad — A3/E4/A4 detuned sine cluster with 0.15Hz LFO ──
+    // Pad chord (A3 / E4 / A4)
     const padSum = ctx.createGain(); padSum.gain.value = 0.22;
     const padDry = ctx.createGain(); padDry.gain.value = 0.55;
     const padWet = ctx.createGain(); padWet.gain.value = 0.90;
     padSum.connect(padDry); padSum.connect(padWet);
     padDry.connect(dryBus);
     padWet.connect(revInput);
+    cosmicAmbient.nodes.push(padSum, padDry, padWet);
     [
       { hz: 220.00, detune:  0 },
       { hz: 220.00, detune: +4 },
@@ -157,80 +216,321 @@ const AMBIENT_RELEASE_DURATION_SEC = 1.8;
       osc.frequency.value = hz;
       osc.detune.value = detune;
       osc.connect(padSum);
-      osc.start(now);
+      osc.start(t0);
       cosmicAmbient.nodes.push(osc);
     });
-    // LFO → padSum.gain ("breathing")
-    const lfo = ctx.createOscillator();
-    const lfoAmt = ctx.createGain();
-    lfo.type = 'sine';
-    lfo.frequency.value = 0.15;
-    lfoAmt.gain.value = 0.06;
-    lfo.connect(lfoAmt); lfoAmt.connect(padSum.gain);
-    lfo.start(now);
-    cosmicAmbient.nodes.push(lfo);
 
-    cosmicAmbient.masterGain = master;
-    cosmicAmbient.dryBus = dryBus;
-    cosmicAmbient.revInput = revInput;
+    // Wobble LFO — frequency ramps with the visual pulse wave
+    const wobLFO = ctx.createOscillator();
+    wobLFO.type = 'sine';
+    wobLFO.frequency.setValueAtTime(0.8, t0);
+    wobLFO.frequency.exponentialRampToValueAtTime(18.0, t0 + AMBIENT_WOBBLE_END_SEC);
+    wobLFO.frequency.exponentialRampToValueAtTime(0.3, t0 + 8.5);  // calm post-impact
+
+    const wobDepth = ctx.createGain();
+    wobDepth.gain.setValueAtTime(0.04, t0);
+    wobDepth.gain.exponentialRampToValueAtTime(AMBIENT_WOBBLE_DEPTH_MAX, t0 + 5.9);
+    wobDepth.gain.exponentialRampToValueAtTime(0.03, t0 + 7.2);    // subsides post-impact
+
+    wobLFO.connect(wobDepth);
+    wobDepth.connect(padSum.gain);
+    wobLFO.start(t0);
+    cosmicAmbient.nodes.push(wobLFO, wobDepth);
   }
 
-  /* A6 shimmer bell — 0.45s swell, 0.45s release. Fires 0.5s
-   * before the visual flash so the ear anticipates the peak. */
-  function scheduleCosmicShimmer(atCtxTime) {
-    if (!deckAudioCtx || !cosmicAmbient.revInput) return;
-    const ctx = deckAudioCtx;
+  /* ── Radial pulse bass — the audio equivalent of the visual pulse wave
+   * A 50 Hz sub-sine amplitude-modulated by an LFO whose frequency
+   * ramps 0.8 → 18 Hz in lockstep with the pad wobble and the visual.
+   * Uses a ConstantSourceNode offset so the bipolar LFO sums into a
+   * >= 0 AM envelope. Audience FEELS this in their chest. */
+  function _scheduleRadialPulse(ctx, t0) {
+    const carrier = ctx.createOscillator();
+    carrier.type = 'sine';
+    carrier.frequency.value = 50;
+
+    const vca = ctx.createGain();
+    vca.gain.value = 0;
+
+    const lfo = ctx.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.setValueAtTime(0.8, t0);
+    lfo.frequency.exponentialRampToValueAtTime(18.0, t0 + AMBIENT_WOBBLE_END_SEC);
+
+    const lfoScale  = ctx.createGain();      lfoScale.gain.value = 0.35;
+    const lfoOffset = ctx.createConstantSource(); lfoOffset.offset.value = 0.40;
+
+    lfo.connect(lfoScale); lfoScale.connect(vca.gain);
+    lfoOffset.connect(vca.gain);
+
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.0001, t0);
+    env.gain.exponentialRampToValueAtTime(0.25, t0 + 2.0);
+    env.gain.exponentialRampToValueAtTime(0.34, t0 + 6.2);
+    env.gain.exponentialRampToValueAtTime(0.0001, t0 + 6.7);  // cut after impact
+
+    carrier.connect(vca); vca.connect(env); env.connect(cosmicAmbient.dryBus);
+    carrier.start(t0);   lfo.start(t0); lfoOffset.start(t0);
+    carrier.stop(t0 + 7.0); lfo.stop(t0 + 7.0); lfoOffset.stop(t0 + 7.0);
+    cosmicAmbient.nodes.push(carrier, vca, lfo, lfoScale, lfoOffset, env);
+  }
+
+  /* ── Tension riser — noise + tone, bandwidth opens toward impact ──
+   * Build-up technique from Pixflow/Ableton guides. Bandpass sweeps
+   * 200 → 8000 Hz across the intensifying+implode window (3.5 → 6.45s).
+   * Tonal saw sweeps 110 → 880 Hz under a climbing lowpass. Both
+   * ramp gain up and cut sharply AT impact to clear space for the
+   * hit. */
+  function _scheduleTensionRiser(ctx, t0) {
+    const tStart = t0 + AMBIENT_RISER_START_SEC;
+    const tPeak  = t0 + AMBIENT_IMPACT_SEC;
+    const dur = tPeak - tStart;
+
+    // Noise component
+    const noiseBuf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * (dur + 0.1)), ctx.sampleRate);
+    const nData = noiseBuf.getChannelData(0);
+    for (let i = 0; i < nData.length; i++) nData[i] = Math.random() * 2 - 1;
+    const nSrc = ctx.createBufferSource(); nSrc.buffer = noiseBuf;
+    const nBP = ctx.createBiquadFilter();
+    nBP.type = 'bandpass'; nBP.Q.value = 2;
+    nBP.frequency.setValueAtTime(200, tStart);
+    nBP.frequency.exponentialRampToValueAtTime(8000, tPeak);
+    const nGain = ctx.createGain();
+    nGain.gain.setValueAtTime(0.0001, tStart);
+    nGain.gain.exponentialRampToValueAtTime(0.22, tPeak - 0.05);
+    nGain.gain.exponentialRampToValueAtTime(0.0001, tPeak + 0.03);
+    const nWet = ctx.createGain(); nWet.gain.value = 0.55;
+    nSrc.connect(nBP); nBP.connect(nGain);
+    nGain.connect(cosmicAmbient.dryBus);
+    nGain.connect(nWet); nWet.connect(cosmicAmbient.revInput);
+    nSrc.start(tStart); nSrc.stop(tPeak + 0.1);
+
+    // Tonal component
+    const tOsc = ctx.createOscillator(); tOsc.type = 'sawtooth';
+    tOsc.frequency.setValueAtTime(110, tStart);
+    tOsc.frequency.exponentialRampToValueAtTime(880, tPeak);
+    const tFilt = ctx.createBiquadFilter();
+    tFilt.type = 'lowpass'; tFilt.Q.value = 3;
+    tFilt.frequency.setValueAtTime(400, tStart);
+    tFilt.frequency.exponentialRampToValueAtTime(6000, tPeak);
+    const tGain = ctx.createGain();
+    tGain.gain.setValueAtTime(0.0001, tStart);
+    tGain.gain.exponentialRampToValueAtTime(0.11, tPeak - 0.05);
+    tGain.gain.exponentialRampToValueAtTime(0.0001, tPeak + 0.02);
+    tOsc.connect(tFilt); tFilt.connect(tGain); tGain.connect(cosmicAmbient.dryBus);
+    tOsc.start(tStart); tOsc.stop(tPeak + 0.05);
+
+    cosmicAmbient.nodes.push(nSrc, nBP, nGain, nWet, tOsc, tFilt, tGain);
+  }
+
+  /* ── A6 shimmer bell — 0.5s anticipation before impact ──
+   * Classic film-score trick: high harmonic hitting BEFORE the peak
+   * primes the ear so the impact lands harder. Heavy reverb wet. */
+  function _scheduleShimmerBell(ctx, t0) {
+    const tRing = t0 + AMBIENT_SHIMMER_SEC;
     const osc = ctx.createOscillator();
-    const g   = ctx.createGain();
-    const dryAmt = ctx.createGain(); dryAmt.gain.value = 0.35;
-    const wetAmt = ctx.createGain(); wetAmt.gain.value = 0.80;
     osc.type = 'sine';
     osc.frequency.value = 1760;  // A6
+    const g = ctx.createGain();
+    const dryAmt = ctx.createGain(); dryAmt.gain.value = 0.30;
+    const wetAmt = ctx.createGain(); wetAmt.gain.value = 0.80;
     osc.connect(g);
     g.connect(dryAmt); dryAmt.connect(cosmicAmbient.dryBus);
     g.connect(wetAmt); wetAmt.connect(cosmicAmbient.revInput);
-    g.gain.setValueAtTime(0.0001, atCtxTime);
-    g.gain.exponentialRampToValueAtTime(0.11, atCtxTime + 0.45);
-    g.gain.exponentialRampToValueAtTime(0.0001, atCtxTime + 0.90);
-    osc.start(atCtxTime); osc.stop(atCtxTime + 0.95);
+    g.gain.setValueAtTime(0.0001, tRing);
+    g.gain.exponentialRampToValueAtTime(0.09, tRing + 0.45);
+    g.gain.exponentialRampToValueAtTime(0.0001, tRing + 0.90);
+    osc.start(tRing); osc.stop(tRing + 0.95);
+    cosmicAmbient.nodes.push(osc, g, dryAmt, wetAmt);
   }
 
-  /* Flash whoosh — filtered-noise burst, bandpass swept 400→4000Hz
-   * over 0.85s with fast-attack / exp-decay gain. Impact hit at
-   * the moment of the visual white-out. */
-  function scheduleCosmicWhoosh(atCtxTime) {
-    if (!deckAudioCtx) return;
-    const ctx = deckAudioCtx;
-    const dur = 0.85;
-    const buffer = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * dur), ctx.sampleRate);
+  /* ── Reverse swell — "negative attack" resolving AT impact ──
+   * Buffer filled with noise envelope ramping UP over the 0.45s
+   * implosion window. Bandpass frequency DROPS 4500 → 300 Hz so
+   * the sound feels like it's being sucked into a pinpoint.
+   * Technique from Tenet's reversed sound design. */
+  function _scheduleReverseSwell(ctx, t0) {
+    const tStart = t0 + AMBIENT_IMPLODE_START_SEC;
+    const tImpact = t0 + AMBIENT_IMPACT_SEC;
+    const dur = tImpact - tStart;  // 0.45s
+    const sampleCount = Math.ceil(ctx.sampleRate * dur);
+
+    const buffer = ctx.createBuffer(1, sampleCount, ctx.sampleRate);
     const data = buffer.getChannelData(0);
-    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    for (let i = 0; i < sampleCount; i++) {
+      const t = i / sampleCount;  // 0 → 1 (quadratic build to end)
+      data[i] = (Math.random() * 2 - 1) * (t * t);
+    }
 
-    const src = ctx.createBufferSource();
-    src.buffer = buffer;
-
+    const src = ctx.createBufferSource(); src.buffer = buffer;
     const bp = ctx.createBiquadFilter();
-    bp.type = 'bandpass';
-    bp.Q.value = 0.9;
-    bp.frequency.setValueAtTime(400, atCtxTime);
-    bp.frequency.exponentialRampToValueAtTime(4000, atCtxTime + dur);
-
+    bp.type = 'bandpass'; bp.Q.value = 1.6;
+    bp.frequency.setValueAtTime(4500, tStart);
+    bp.frequency.exponentialRampToValueAtTime(300, tImpact);
     const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, atCtxTime);
-    g.gain.exponentialRampToValueAtTime(0.38, atCtxTime + 0.08);
-    g.gain.exponentialRampToValueAtTime(0.0001, atCtxTime + dur);
-
-    const dryAmt = ctx.createGain(); dryAmt.gain.value = 0.65;
-    const wetAmt = ctx.createGain(); wetAmt.gain.value = 0.55;
-
+    g.gain.setValueAtTime(0.0001, tStart);
+    g.gain.exponentialRampToValueAtTime(0.32, tImpact - 0.01);
+    const wet = ctx.createGain(); wet.gain.value = 0.8;
     src.connect(bp); bp.connect(g);
-    g.connect(dryAmt); g.connect(wetAmt);
-    dryAmt.connect(cosmicAmbient.dryBus || ctx.destination);
-    wetAmt.connect(cosmicAmbient.revInput || ctx.destination);
-    src.start(atCtxTime);
+    g.connect(cosmicAmbient.dryBus);
+    g.connect(wet); wet.connect(cosmicAmbient.revInput);
+    src.start(tStart);
+    cosmicAmbient.nodes.push(src, bp, g, wet);
   }
 
-  function stopCosmicAmbient(fadeOutSec = AMBIENT_RELEASE_DURATION_SEC) {
+  /* ── Impact duck — sidechain-style "held breath" before impact ──
+   * Bed ducks to AMBIENT_DUCK_DEPTH for the 100ms held-singularity
+   * window, then releases exactly AT the impact frame. Max contrast
+   * between quiet-before and hit. Impact layers bypass the duck so
+   * THEY hit at full volume.  */
+  function _scheduleImpactDuck(ctx, t0) {
+    const g = cosmicAmbient.duckGain.gain;
+    g.setValueAtTime(1.0, t0 + AMBIENT_DUCK_START_SEC);
+    g.exponentialRampToValueAtTime(AMBIENT_DUCK_DEPTH, t0 + AMBIENT_DUCK_HOLD_START_SEC);
+    g.setValueAtTime(AMBIENT_DUCK_DEPTH, t0 + AMBIENT_DUCK_HOLD_END_SEC);
+    g.exponentialRampToValueAtTime(1.0, t0 + AMBIENT_IMPACT_SEC + 0.05);
+  }
+
+  /* ── Big-bang impact stack — 5-layer broadband hit ──
+   * Each layer targets a different frequency band so they sum
+   * cleanly rather than mud up one band. Connects to impactBus
+   * (direct to destination) so the master fade/release envelope
+   * doesn't attenuate the peak.
+   *
+   *   sub kick     90 → 30 Hz sine, 1.3s body         — "thump you feel"
+   *   mid body     900 → 150 Hz bandpass noise, 0.45s — "boom"
+   *   hi transient 2500+ Hz noise snap, 80ms          — "crack"
+   *   FM tonal     FM sine (car 220 / mod 440), 0.5s  — "pitched impact"
+   *   roar         800 → 40 Hz bandpass noise, 2.5s   — "sustained roar tail"
+   */
+  function _scheduleBigBangImpact(ctx, t0) {
+    const t = t0 + AMBIENT_IMPACT_SEC;
+
+    // impactBus bypasses master + duck — impact hits at synthesized level
+    const impactBus = ctx.createGain(); impactBus.gain.value = 1.0;
+    impactBus.connect(ctx.destination);
+    cosmicAmbient.nodes.push(impactBus);
+
+    // --- Sub kick: 90 → 30 Hz descending sine, 1.3s body ---
+    {
+      const osc = ctx.createOscillator(); osc.type = 'sine';
+      osc.frequency.setValueAtTime(90, t);
+      osc.frequency.exponentialRampToValueAtTime(30, t + 0.12);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.52, t + 0.006);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 1.3);
+      osc.connect(g); g.connect(impactBus);
+      osc.start(t); osc.stop(t + 1.4);
+      cosmicAmbient.nodes.push(osc, g);
+    }
+
+    // --- Mid body: filtered noise 900 → 150 Hz, 0.45s ---
+    {
+      const dur = 0.45;
+      const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * dur), ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      const src = ctx.createBufferSource(); src.buffer = buf;
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass'; bp.Q.value = 0.8;
+      bp.frequency.setValueAtTime(900, t);
+      bp.frequency.exponentialRampToValueAtTime(150, t + 0.3);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.38, t + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+      const wet = ctx.createGain(); wet.gain.value = 0.7;
+      src.connect(bp); bp.connect(g);
+      g.connect(impactBus);
+      g.connect(wet); wet.connect(cosmicAmbient.revInput);
+      src.start(t);
+      cosmicAmbient.nodes.push(src, bp, g, wet);
+    }
+
+    // --- Hi transient: 2.5+ kHz noise snap, 80ms ---
+    {
+      const dur = 0.10;
+      const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * dur), ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      const src = ctx.createBufferSource(); src.buffer = buf;
+      const hp = ctx.createBiquadFilter();
+      hp.type = 'highpass'; hp.frequency.value = 2500;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.28, t + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+      const wet = ctx.createGain(); wet.gain.value = 0.4;
+      src.connect(hp); hp.connect(g);
+      g.connect(impactBus);
+      g.connect(wet); wet.connect(cosmicAmbient.revInput);
+      src.start(t);
+      cosmicAmbient.nodes.push(src, hp, g, wet);
+    }
+
+    // --- FM tonal: gives impact PITCH, not just noise ---
+    {
+      const car = ctx.createOscillator(); car.type = 'sine'; car.frequency.value = 220;
+      const mod = ctx.createOscillator(); mod.type = 'sine'; mod.frequency.value = 440;
+      const modGain = ctx.createGain();
+      modGain.gain.setValueAtTime(800, t);
+      modGain.gain.exponentialRampToValueAtTime(20, t + 0.18);
+      mod.connect(modGain); modGain.connect(car.frequency);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.22, t + 0.006);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.48);
+      const wet = ctx.createGain(); wet.gain.value = 0.9;
+      car.connect(g);
+      g.connect(impactBus);
+      g.connect(wet); wet.connect(cosmicAmbient.revInput);
+      car.start(t); mod.start(t);
+      car.stop(t + 0.55); mod.stop(t + 0.55);
+      cosmicAmbient.nodes.push(car, mod, modGain, g, wet);
+    }
+
+    // --- Roar: broadband tail 800 → 40 Hz, 2.5s ---
+    {
+      const dur = 2.5;
+      const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * dur), ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      const src = ctx.createBufferSource(); src.buffer = buf;
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass'; bp.Q.value = 1.2;
+      bp.frequency.setValueAtTime(800, t);
+      bp.frequency.exponentialRampToValueAtTime(40, t + dur);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.20, t + 0.06);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      const wet = ctx.createGain(); wet.gain.value = 0.8;
+      src.connect(bp); bp.connect(g);
+      g.connect(impactBus);
+      g.connect(wet); wet.connect(cosmicAmbient.revInput);
+      src.start(t);
+      cosmicAmbient.nodes.push(src, bp, g, wet);
+    }
+  }
+
+  /* Entry point — schedules the entire 12.6s sequence in one call. */
+  function startCosmicBigBang() {
+    if (!deckAudioCtx || cosmicAmbient.active) return;
+    cosmicAmbient.active = true;
+    const ctx = deckAudioCtx;
+    const t0 = ctx.currentTime;
+
+    _buildAmbientBuses(ctx, t0);
+    _buildCosmicBed(ctx, t0);
+    _scheduleRadialPulse(ctx, t0);
+    _scheduleTensionRiser(ctx, t0);
+    _scheduleShimmerBell(ctx, t0);
+    _scheduleReverseSwell(ctx, t0);
+    _scheduleImpactDuck(ctx, t0);
+    _scheduleBigBangImpact(ctx, t0);
+  }
+
+  function stopCosmicBigBang(fadeOutSec = AMBIENT_RELEASE_DURATION_SEC) {
     if (!deckAudioCtx || !cosmicAmbient.active) return;
     const ctx = deckAudioCtx;
     const now = ctx.currentTime;
@@ -249,10 +549,11 @@ const AMBIENT_RELEASE_DURATION_SEC = 1.8;
       });
       cosmicAmbient.nodes = [];
       cosmicAmbient.masterGain = null;
+      cosmicAmbient.duckGain = null;
       cosmicAmbient.dryBus = null;
       cosmicAmbient.revInput = null;
       cosmicAmbient.active = false;
-    }, Math.ceil((fadeOutSec + 0.2) * 1000));
+    }, Math.ceil((fadeOutSec + 0.3) * 1000));
   }
 
   /* ───────────────────────────── status dot UI ─────────────────── */
@@ -424,16 +725,12 @@ const AMBIENT_RELEASE_DURATION_SEC = 1.8;
         const onIntro = active?.getAttribute('data-label') === 'Intro';
         if (!onIntro) { deck.next && deck.next(); break; }
 
-        /* Cosmic-ambient bed — synced to the visual phase map. Bed
-         * begins now (fades in under tensioning); shimmer bell
-         * anticipates the flash; whoosh hits on the flash frame;
-         * release starts as deck.next() fires (slide 1 enter). */
+        /* Full cinematic sequence — all layers scheduled inside
+         * startCosmicBigBang() relative to explode time. Release
+         * begins at AMBIENT_RELEASE_AT_MS (deck.next fires). */
         if (deckAudioCtx) {
-          startCosmicAmbient();
-          const t0 = deckAudioCtx.currentTime;
-          scheduleCosmicShimmer(t0 + AMBIENT_SHIMMER_SEC);
-          scheduleCosmicWhoosh(t0 + AMBIENT_WHOOSH_SEC);
-          setTimeout(() => stopCosmicAmbient(), AMBIENT_RELEASE_AT_MS);
+          startCosmicBigBang();
+          setTimeout(() => stopCosmicBigBang(), AMBIENT_RELEASE_AT_MS);
         }
 
         window.dispatchEvent(new CustomEvent('deck-explode'));

@@ -873,6 +873,176 @@ function Frame({ chapter, idx, total, dense, children, starfield = true, footerL
   );
 }
 
+/* ── Slide 0: Intro ─────────────────────────────────────────────
+ *
+ * Cover slide shown BEFORE slide 1. Deep-black background, a slowly
+ * revolving pinkish-purple star in the center with multiple hues
+ * drifting inside. On "Start" from the phone remote, the window
+ * listens for a `deck-explode` CustomEvent — it adds the
+ * `.intro-star--exploding` class to the star, then deck.next() is
+ * called in parallel. Scatterboard handles the slide transition;
+ * the explosion runs alongside.
+ *
+ * The star is built from an SVG <clipPath> in the shape of a 5-point
+ * star. Inside that clip we render five large radial-gradient
+ * <circle> elements at different hues. Each orbits its own center at
+ * a different period, so the hues drift across the star's interior
+ * without syncing. A thin outer stroke + drop-shadow gives the
+ * whole shape a glow. */
+function SlideIntro() {
+  // 5-point star path (outer radius 100, inner radius 42), centered
+  // at (0,0). Viewbox is -200..200 so we have room for glow + exploding particles.
+  const R_OUT = 100, R_IN = 42;
+  const starPath = (() => {
+    const pts = [];
+    for (let i = 0; i < 10; i++) {
+      const r = i % 2 === 0 ? R_OUT : R_IN;
+      // Start at top (i=0 at angle -90deg)
+      const ang = (Math.PI / 5) * i - Math.PI / 2;
+      pts.push([r * Math.cos(ang), r * Math.sin(ang)]);
+    }
+    return 'M ' + pts.map(p => p.map(n => n.toFixed(2)).join(',')).join(' L ') + ' Z';
+  })();
+
+  // Internal orbit parameters for each drifting hue-orb. Position +
+  // orbit radius + period are deterministic so the composition is
+  // stable across reloads.
+  const orbs = [
+    { cx:  -25, cy:  -20, r: 90,  color: '#ec4899', period: 14, phase: 0   }, // pink
+    { cx:   30, cy:   10, r: 85,  color: '#c026d3', period: 18, phase: 0.3 }, // magenta-violet
+    { cx:    0, cy:  -35, r: 70,  color: '#a855f7', period: 22, phase: 0.7 }, // violet
+    { cx:  -10, cy:   35, r: 80,  color: '#f9a8d4', period: 16, phase: 0.5 }, // light pink
+    { cx:   25, cy:  -30, r: 75,  color: '#7c3aed', period: 20, phase: 0.2 }, // deep purple
+  ];
+
+  // Particle positions for the explosion — pre-computed so they feel
+  // deterministic. Each gets a random outward angle + speed + delay.
+  const PARTICLE_COUNT = 34;
+  const particles = Array.from({ length: PARTICLE_COUNT }, (_, i) => {
+    const seed = Math.sin(i * 23.17) * 10000;
+    const frac = seed - Math.floor(seed);
+    const ang = (i / PARTICLE_COUNT) * Math.PI * 2 + frac * 0.4;
+    const dist = 260 + (Math.sin(i * 7.13) * 0.5 + 0.5) * 180;   // 260..440
+    const dx = Math.cos(ang) * dist;
+    const dy = Math.sin(ang) * dist;
+    const size = 3 + (Math.sin(i * 3.7) * 0.5 + 0.5) * 5;
+    const delay = (Math.sin(i * 5.1) * 0.5 + 0.5) * 120;         // 0..120ms
+    // Rotate through the star's hue palette.
+    const hue = ['#ec4899', '#c026d3', '#a855f7', '#f9a8d4', '#7c3aed'][i % 5];
+    return { dx, dy, size, delay, hue, i };
+  });
+
+  const introRef = useRef(null);
+
+  // Listen for the phone's START command (dispatched by remote-host.js).
+  useEffect(() => {
+    const onExplode = () => {
+      const el = introRef.current;
+      if (!el) return;
+      el.classList.add('intro-star--exploding');
+    };
+    window.addEventListener('deck-explode', onExplode);
+    return () => window.removeEventListener('deck-explode', onExplode);
+  }, []);
+
+  return (
+    <div ref={introRef}
+         className="slide intro-slide"
+         style={{
+           width: '100%', height: '100%',
+           background: '#000',
+           position: 'relative',
+           overflow: 'hidden',
+           display: 'flex', alignItems: 'center', justifyContent: 'center',
+           flexDirection: 'column',
+         }}>
+      {/* The star — large centered SVG */}
+      <div className="intro-star" style={{ position: 'relative', width: 520, height: 520 }}>
+        <svg width="520" height="520" viewBox="-200 -200 400 400"
+             style={{ overflow: 'visible', display: 'block' }}>
+          <defs>
+            <clipPath id="intro-star-clip">
+              <path d={starPath} />
+            </clipPath>
+            {/* Soft outer glow for the star outline */}
+            <filter id="intro-star-glow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="6" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+
+          {/* Revolving group — rotates the whole star body (the clipped
+              hue orbs go with it, so the silhouette revolves). */}
+          <g className="intro-star__spin">
+            {/* Internal hue orbs, clipped to star. Each orb orbits
+                around its own center via CSS transform. */}
+            <g clipPath="url(#intro-star-clip)">
+              <rect x="-200" y="-200" width="400" height="400" fill="#1a0a1f" />
+              {orbs.map((o, i) => (
+                <circle key={i}
+                        className={`intro-orb intro-orb--${i}`}
+                        cx={o.cx} cy={o.cy} r={o.r}
+                        fill={o.color}
+                        opacity="0.75"
+                        style={{ transformOrigin: `${o.cx}px ${o.cy}px` }} />
+              ))}
+            </g>
+
+            {/* Star outline — subtle accent stroke with drop-shadow glow */}
+            <path d={starPath}
+                  fill="none"
+                  stroke="rgba(249,168,212,0.75)"
+                  strokeWidth="1.5"
+                  strokeLinejoin="round"
+                  filter="url(#intro-star-glow)" />
+          </g>
+
+          {/* Explosion particles — hidden until .intro-star--exploding
+              is toggled on the parent. Each CSS variable drives the
+              final offset so the JS just adds the class. */}
+          <g className="intro-particles">
+            {particles.map(p => (
+              <circle key={p.i}
+                      cx="0" cy="0" r={p.size}
+                      fill={p.hue}
+                      className="intro-particle"
+                      style={{
+                        '--dx': `${p.dx.toFixed(1)}px`,
+                        '--dy': `${p.dy.toFixed(1)}px`,
+                        '--pd': `${p.delay.toFixed(0)}ms`,
+                      }} />
+            ))}
+          </g>
+        </svg>
+      </div>
+
+      {/* Tagline beneath the star. Faint, won't fight with the star. */}
+      <div className="intro-tagline"
+           style={{
+             marginTop: 40,
+             fontFamily: 'JetBrains Mono, monospace',
+             fontSize: 14, letterSpacing: '0.3em',
+             textTransform: 'uppercase',
+             color: 'rgba(249,168,212,0.5)',
+             textAlign: 'center',
+             userSelect: 'none',
+           }}>
+        AI in Power Electronics
+        <div style={{
+          marginTop: 10,
+          fontSize: 11, letterSpacing: '0.22em',
+          color: 'rgba(200,200,212,0.3)',
+        }}>
+          Tap start on the remote
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Slide 1: Title ─────────────────────────────────────────────── */
 function SlideTitle({ idx, total, presenter }) {
   return (
@@ -2079,6 +2249,7 @@ function TweaksPanel({ tweaks, setTweaks, visible, onClose }) {
 
 /* ── Share globals ─────────────────────────────────────────────── */
 Object.assign(window, {
+  SlideIntro,
   SlideTitle, SlideWhy, SlideGlance, SlideTaxonomy, SlideToolkits,
   SlideDesign, SlideControl, SlideMaintenance, SlideTasks, SlideOpen,
   SlideTake, SlideTakeaways, SlideThanks, TweaksPanel,
@@ -2147,6 +2318,10 @@ function mountAt(id, element) {
 
 applyTweaks(TWEAK_DEFAULTS);
 
+// Intro slide (s0) — no idx/total; it's a pre-show cover that sits
+// outside the numbered 01/13 sequence. SlideIntro renders the
+// revolving star + listens for the 'deck-explode' event.
+mountAt('s0',  <SlideIntro />);
 mountAt('s1',  <SlideTitle       idx={1}  total={TOTAL} presenter={PRESENTER} />);
 mountAt('s2',  <SlideWhy         idx={2}  total={TOTAL} />);
 mountAt('s3',  <SlideGlance      idx={3}  total={TOTAL} />);
@@ -2214,6 +2389,18 @@ if (tweaksRoot) ReactDOM.createRoot(tweaksRoot).render(<TweaksHost />);
 (() => {
   const deck = document.querySelector('deck-stage');
   if (!deck) return;
+
+  // Apply intro-mode immediately if the deck is already on the intro
+  // slide when this handler registers. deck-stage fires its 'init'
+  // slidechange event BEFORE deck.jsx finishes loading (React mount is
+  // async), so we miss that first event and would otherwise leave the
+  // body without the class on initial load.
+  {
+    const initialActive = document.querySelector('deck-stage > section[data-deck-active]');
+    if (initialActive?.getAttribute('data-label') === 'Intro') {
+      document.body.classList.add('intro-mode');
+    }
+  }
 
   // Timings — must match longest duration in styles.css Scatterboard block.
   const EXIT_DURATION  = 460;  // longest exit variant (slide-left)
@@ -2372,6 +2559,20 @@ if (tweaksRoot) ReactDOM.createRoot(tweaksRoot).render(<TweaksHost />);
   deck.addEventListener('slidechange', (e) => {
     const { slide, previousSlide, reason } = e.detail || {};
     const sameSlide = previousSlide && previousSlide === slide;
+
+    // Intro-mode body class toggle — hides aurora + flow field while
+    // the intro slide is active so the star sits on a pure-black field.
+    // CSS transitions the fade, so this is just a boolean flip per change.
+    const isIntro = slide?.getAttribute('data-label') === 'Intro';
+    document.body.classList.toggle('intro-mode', isIntro);
+
+    // Leaving intro — trigger the star explosion regardless of source
+    // (phone START, arrow key, space, etc.). SlideIntro's onExplode
+    // handler is idempotent (adds a class that's already there = noop).
+    const wasIntro = previousSlide?.getAttribute('data-label') === 'Intro';
+    if (wasIntro && !sameSlide) {
+      window.dispatchEvent(new CustomEvent('deck-explode'));
+    }
 
     // Actual slide→slide transition: exit old → HOLD → activate new
     // (paused) → paint → visual BUFFER → enter animations.

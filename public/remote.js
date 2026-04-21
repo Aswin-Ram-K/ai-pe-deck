@@ -33,10 +33,25 @@
 
   function setSlide(index, total, label) {
     if (typeof index === 'number' && typeof total === 'number' && index >= 0) {
-      $('slide-num').innerHTML =
-        `${String(index + 1).padStart(2, '0')}<span class="of"> / ${total}</span>`;
+      if (label === 'Intro') {
+        // Pre-show cover — display a different layout so the audience
+        // doesn't see "00 / 14" on the presenter's wrist.
+        $('slide-num').innerHTML = `<span class="intro-label">READY</span>`;
+      } else {
+        // index 1..13 when label is normal (s1..s13 after the intro).
+        // Subtract the intro from total so we still show N / 13.
+        $('slide-num').innerHTML =
+          `${String(index).padStart(2, '0')}<span class="of"> / ${total - 1}</span>`;
+      }
     }
-    if (label !== undefined) $('slide-label').textContent = label || '—';
+    if (label !== undefined) {
+      $('slide-label').textContent = label === 'Intro' ? 'Tap start to begin' : (label || '—');
+    }
+    // Toggle intro-mode on the phone UI — morphs Next button to START.
+    const onIntro = label === 'Intro';
+    document.body.classList.toggle('on-intro', onIntro);
+    const btn = $('btn-next');
+    if (btn) btn.innerHTML = onIntro ? '▶&nbsp;&nbsp;START' : 'Next&nbsp;&nbsp;▶';
   }
 
   /* ───────────────────── peer setup ─────────────────────────────── */
@@ -134,7 +149,12 @@
 
   /* ───────────────────── button & gesture wiring ────────────────── */
 
-  $('btn-next').addEventListener('click', () => send({ action: 'next' }));
+  $('btn-next').addEventListener('click', () => {
+    // On intro: send 'start' (triggers the star explosion + advance).
+    // Otherwise: normal 'next'.
+    const isIntro = document.body.classList.contains('on-intro');
+    send({ action: isIntro ? 'start' : 'next' });
+  });
   $('btn-prev').addEventListener('click', () => send({ action: 'prev' }));
   $('btn-home').addEventListener('click', () => send({ action: 'home' }));
   $('btn-end').addEventListener('click', () => send({ action: 'end' }));

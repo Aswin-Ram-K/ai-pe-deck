@@ -527,6 +527,132 @@ deck-stage > section[data-deck-active] {
   }
 }
 
+/* ─── Intro slide (s0) ────────────────────────────────────────────
+ * Revolving pink/purple star that the presenter triggers to explode
+ * via the phone remote's Start button.
+ * ─────────────────────────────────────────────────────────────── */
+
+/* While the intro is the active slide, fade body-level backdrops
+ * (aurora + flow field) so the star reads on a truly-black field.
+ * Toggled by JS on slidechange. */
+body.intro-mode .aurora-backdrop,
+body.intro-mode #bg-flowfield {
+  opacity: 0 !important;
+  transition: opacity 900ms ease-out;
+}
+/* Leaving the intro: the background reveals back in.
+ * Longer transition so it fades in over the first new slide's
+ * entrance, feeling like the world awakens as the star dissipates. */
+body:not(.intro-mode) .aurora-backdrop,
+body:not(.intro-mode) #bg-flowfield {
+  transition: opacity 1400ms ease-in;
+}
+
+/* Intro slide container — pure black, no aurora blend */
+.intro-slide {
+  background: #000 !important;
+}
+
+/* The star revolves slowly as its resting state */
+.intro-star__spin {
+  transform-origin: 0 0;
+  animation: introSpin 42s linear infinite;
+  animation-play-state: paused;
+}
+[data-deck-active] .intro-star__spin { animation-play-state: running; }
+@keyframes introSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* Internal hue orbs — each orbits independently. Periods are set
+ * from inline styles on the orb elements; the keyframe just drives
+ * a circular orbit via translate+rotate. Five orbs, five periods
+ * (14s, 16s, 18s, 20s, 22s) chosen to never align — the interior
+ * never repeats its exact hue composition. */
+.intro-orb {
+  animation: orbDrift var(--orb-dur, 18s) ease-in-out infinite alternate;
+  animation-play-state: paused;
+}
+[data-deck-active] .intro-orb { animation-play-state: running; }
+.intro-orb--0 { animation-duration: 14s; animation-delay:  0s; }
+.intro-orb--1 { animation-duration: 18s; animation-delay: -4s; }
+.intro-orb--2 { animation-duration: 22s; animation-delay: -9s; }
+.intro-orb--3 { animation-duration: 16s; animation-delay: -2s; }
+.intro-orb--4 { animation-duration: 20s; animation-delay: -6s; }
+
+@keyframes orbDrift {
+  0%   { transform: translate(0, 0) scale(1);    filter: blur(18px); }
+  50%  { transform: translate(40px, -20px) scale(1.15); filter: blur(24px); }
+  100% { transform: translate(-30px, 30px) scale(0.95); filter: blur(18px); }
+}
+
+/* Explosion sequence — snap inward, flash bright, burst outward,
+ * dissipate into the background. JS adds `.intro-star--exploding`
+ * to the slide's root; that cascades to the star and particles. */
+.intro-star--exploding .intro-star__spin {
+  /* Override spin with the explosion animation */
+  animation:
+    introSpin 42s linear infinite,
+    introStarBurst 900ms cubic-bezier(.55, 0, .1, 1) forwards;
+}
+@keyframes introStarBurst {
+  0%   { transform: scale(1);   filter: brightness(1) blur(0); }
+  12%  { transform: scale(0.88); filter: brightness(1.4) blur(0); }        /* windup / compress */
+  22%  { transform: scale(1.06); filter: brightness(3) blur(1px); }        /* snap / flare */
+  40%  { transform: scale(1.9);  filter: brightness(2.2) blur(6px); opacity: 0.7; } /* burst out */
+  100% { transform: scale(3.4);  filter: brightness(0.6) blur(20px); opacity: 0; }
+}
+
+/* Particles — hidden at rest, fly outward when parent has exploding class */
+.intro-particle {
+  opacity: 0;
+  transform-origin: 0 0;
+}
+.intro-star--exploding .intro-particle {
+  animation: introParticleOut 820ms cubic-bezier(.25, .5, .1, 1) var(--pd, 0ms) forwards;
+}
+@keyframes introParticleOut {
+  0%   {
+    opacity: 0;
+    transform: translate(0, 0) scale(0);
+    filter: blur(0) brightness(2);
+  }
+  8%   {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+    filter: blur(0) brightness(2.2);
+  }
+  60%  {
+    opacity: 0.9;
+    transform:
+      translate(calc(var(--dx, 0px) * 0.8), calc(var(--dy, 0px) * 0.8))
+      scale(0.9);
+    filter: blur(2px) brightness(1.6);
+  }
+  100% {
+    opacity: 0;
+    transform:
+      translate(var(--dx, 0px), var(--dy, 0px))
+      scale(0.2);
+    filter: blur(8px) brightness(1);
+  }
+}
+
+/* During explosion the tagline also fades so everything goes to black */
+.intro-star--exploding .intro-tagline {
+  animation: introTaglineFade 700ms ease-out forwards;
+}
+@keyframes introTaglineFade {
+  to { opacity: 0; transform: translateY(-8px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .intro-star__spin, .intro-orb { animation: none !important; }
+  .intro-star--exploding .intro-star__spin,
+  .intro-star--exploding .intro-particle { animation-duration: 1ms !important; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-tile]::after { display: none; }
   .deck-leaving-anim { animation-duration: 1ms; }

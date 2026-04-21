@@ -89,21 +89,32 @@
 
   /* ───────────────────────────── peer lifecycle ─────────────────── */
 
-  function loadScript(src) {
+  function loadScript(src, integrity) {
     return new Promise((resolve, reject) => {
       const s = document.createElement('script');
       s.src = src;
+      if (integrity) {
+        s.integrity = integrity;
+        s.crossOrigin = 'anonymous';
+      }
       s.onload = resolve;
       s.onerror = reject;
       document.head.appendChild(s);
     });
   }
 
+  /* PeerJS 1.5.5 SRI hash — must match remote.html's integrity attr.
+     Regenerate if pinning a different PeerJS version:
+       curl -s https://unpkg.com/peerjs@X.Y.Z/dist/peerjs.min.js \
+         | openssl dgst -sha384 -binary | openssl base64 -A */
+  const PEERJS_SRC = 'https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js';
+  const PEERJS_SRI = 'sha384-x0YgkOr/3UOZP2CRDxGW9e0Q+2Qjyr3uJrm4xU32Y7ZCNAo7Cc7bjhrZMi/dwczu';
+
   async function startPeer() {
     if (peerReady) return;
     if (!window.Peer) {
       try {
-        await loadScript('https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js');
+        await loadScript(PEERJS_SRC, PEERJS_SRI);
       } catch (e) {
         setStatus('error');
         console.warn('[remote] PeerJS failed to load', e);
@@ -171,6 +182,23 @@
         if (typeof msg.index === 'number' && deck.goTo) deck.goTo(msg.index);
         break;
       case 'hello': sendState(); break;
+
+      // Intro START — fire the explosion event on the intro slide,
+      // then advance to slide 1 after a brief delay. The explosion
+      // CSS runs over ~900 ms; our scatterboard transition runs in
+      // parallel so the particles fly over slide 1's entrance.
+      case 'start': {
+        // Only valid when we're on the intro (don't misfire from other slides)
+        const active = document.querySelector('deck-stage > section[data-deck-active]');
+        const onIntro = active?.getAttribute('data-label') === 'Intro';
+        if (!onIntro) { deck.next && deck.next(); break; }
+        // Tell the intro component to kick off its exit animation.
+        window.dispatchEvent(new CustomEvent('deck-explode'));
+        // Advance to slide 1 in parallel — scatterboard overlaps the
+        // explosion so the two blend into one transition.
+        setTimeout(() => { deck.next && deck.next(); }, 0);
+        break;
+      }
     }
   }
 

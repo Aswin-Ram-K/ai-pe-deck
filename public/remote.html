@@ -92,8 +92,10 @@
   #launchpad {
     flex: 1 1 auto;
     display: flex;
+    flex-direction: column;
     align-items: center; justify-content: center;
-    padding: 0 20px;
+    gap: 26px;
+    padding: 20px 20px 28px;
     z-index: 1;
   }
   body:not(.on-intro) #launchpad,
@@ -101,7 +103,8 @@
 
   #btn-bigbang {
     appearance: none;
-    width: min(72vw, 380px);
+    flex: 0 0 auto;
+    width: min(60vw, 300px);
     aspect-ratio: 1 / 1;
     border-radius: 50%;
     border: none;
@@ -144,6 +147,65 @@
         0  0  80px -4px  color-mix(in oklch, var(--accent) 95%, transparent),
         0  0 170px -10px color-mix(in oklch, var(--accent) 100%, transparent);
     }
+  }
+
+  /* ═══════════════════════════════════════════════════════════════
+   * FORMAT LEGEND — under the BIG BANG button. Each entry renders
+   * in its native style so the presenter matches visual → meaning
+   * rather than memorizing a verbal description.
+   * ═══════════════════════════════════════════════════════════════ */
+  #format-legend {
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: 360px;
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--ink-3);
+    text-align: left;
+    opacity: 0.92;
+  }
+  #format-legend .lg-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 14px;
+    align-items: baseline;
+    padding: 6px 0;
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.07);
+  }
+  #format-legend .lg-row:last-child { border-bottom: none; }
+  #format-legend .lg-meaning {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    white-space: nowrap;
+    opacity: 0.7;
+  }
+
+  /* Per-format samples — mirror the teleprompter rules */
+  #format-legend .lg-body {
+    color: var(--ink);
+    font-size: 15px;
+    font-weight: 400;
+  }
+  #format-legend .lg-stage {
+    color: var(--ink-3);
+    font-style: italic;
+    font-size: 13px;
+  }
+  #format-legend .lg-quote {
+    color: var(--ink);
+    font-style: italic;
+    font-size: 14px;
+    padding-left: 10px;
+    border-left: 3px solid var(--accent);
+  }
+  #format-legend .lg-callback {
+    color: color-mix(in oklch, var(--accent) 70%, var(--ink));
+    font-size: 13px;
+    letter-spacing: 0.02em;
   }
 
   /* ═══════════════════════════════════════════════════════════════
@@ -510,6 +572,24 @@
   <button id="btn-bigbang" aria-label="Big Bang — start the presentation">
     Big Bang
   </button>
+  <div id="format-legend" aria-label="Teleprompter format legend">
+    <div class="lg-row">
+      <span class="lg-body">Body text</span>
+      <span class="lg-meaning">Speak normally</span>
+    </div>
+    <div class="lg-row">
+      <span class="lg-stage">[bracketed italic]</span>
+      <span class="lg-meaning">Stage cue · do not speak</span>
+    </div>
+    <div class="lg-row">
+      <span class="lg-quote">Accent-bar italic</span>
+      <span class="lg-meaning">Signature line · weight</span>
+    </div>
+    <div class="lg-row">
+      <span class="lg-callback">CALLBACK → hook</span>
+      <span class="lg-meaning">Structural link across slides</span>
+    </div>
+  </div>
 </div>
 
 <!-- STATE C: 5-second countdown overlay -->
@@ -554,7 +634,7 @@
         integrity="sha384-x0YgkOr/3UOZP2CRDxGW9e0Q+2Qjyr3uJrm4xU32Y7ZCNAo7Cc7bjhrZMi/dwczu"
         crossorigin="anonymous"></script>
 <!-- ?v=… cache-bust so iOS Safari can't serve a stale script after hard-refresh -->
-<script src="remote.js?v=20260421-scrub-indep-timers"></script>
+<script src="remote.js?v=20260421-legend-on-launchpad"></script>
 
 </body>
 </html>

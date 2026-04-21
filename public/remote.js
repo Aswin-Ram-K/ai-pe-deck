@@ -22,9 +22,20 @@
 
   const PEER_ID = 'ai-pe-deck-ece563-liveroom-2026a';
 
+  /* Standalone mode — append `?standalone=1` to the remote URL and
+   * the phone runs the teleprompter + timer + countdown with NO
+   * deck connection at all. Useful when the room network blocks
+   * the PeerJS broker. Drive the deck slides with the laptop's
+   * keyboard (Right Arrow = next) independently. Buttons on the
+   * phone advance a local slide counter; BIG BANG countdown ends
+   * with a local "slide 1 arrival" that kicks the teleprompter. */
+  const STANDALONE = new URLSearchParams(location.search).get('standalone') === '1';
+  const STANDALONE_TOTAL = 14;   // index 0 = Intro, 1..13 = slides
+  let standaloneIndex = 0;
+
   /* Bumps per deploy so iOS Safari can't serve cached assets after
    * we ship a fix. Seen as ?v=<stamp> on remote.js + speaker-script.json. */
-  const BUILD_VERSION = '20260421-fresh-peerid';
+  const BUILD_VERSION = '20260421-standalone';
 
   /* Total presentation budget used by the "Total" countdown in the
    * timer strip. Starts the moment the teleprompter lands on a
@@ -224,10 +235,36 @@
   }
 
   function send(msg) {
+    if (STANDALONE) {
+      handleLocalAction(msg);
+      return;
+    }
     if (conn && conn.open) {
       conn.send(msg);
       if (navigator.vibrate) navigator.vibrate(12);
     }
+  }
+
+  /* Standalone-mode action handler — simulates what the deck would
+   * normally do when it receives a send({action:...}) message. */
+  function handleLocalAction(msg) {
+    if (!msg || !msg.action) return;
+    if (navigator.vibrate) navigator.vibrate(12);
+    switch (msg.action) {
+      case 'next':  goLocalSlide(standaloneIndex + 1); break;
+      case 'prev':  goLocalSlide(standaloneIndex - 1); break;
+      case 'home':  goLocalSlide(0); break;
+      case 'end':   goLocalSlide(STANDALONE_TOTAL - 1); break;
+      case 'goto':  if (typeof msg.index === 'number') goLocalSlide(msg.index); break;
+      case 'start': goLocalSlide(1); break;  // countdown end → slide 1
+      case 'hello': break;                    // no-op
+    }
+  }
+
+  function goLocalSlide(newIdx) {
+    standaloneIndex = Math.max(0, Math.min(STANDALONE_TOTAL - 1, newIdx));
+    const label = standaloneIndex === 0 ? 'Intro' : 'Slide ' + standaloneIndex;
+    setSlide(standaloneIndex, STANDALONE_TOTAL, label);
   }
 
   /* ═══════════════════════════════════════════════════════════════
@@ -930,5 +967,10 @@
   /* ───────────────────── boot ───────────────────────────────────── */
 
   loadScript();
-  connect();
+  if (STANDALONE) {
+    setStatus('Standalone · no deck', false);
+    goLocalSlide(0);  // show Intro / BIG BANG launchpad
+  } else {
+    connect();
+  }
 })();

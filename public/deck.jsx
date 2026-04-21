@@ -731,9 +731,20 @@ function TrendProjection({ width = 560, height = 240 }) {
                   style={{ '--len': 1200, '--trace-dur': '1400ms',
                            animationDelay: `${400 + si * 250}ms` }} />
             {pts.map(([x, y], i) => (
+              // Data endpoints use candidate-dot for the entrance pop,
+              // but we zero the idle drift/breathe parameters so they
+              // lock in place after arriving — they anchor the curve
+              // to specific years and shouldn't float.
               <circle key={i} cx={x} cy={y} r="5" fill={s.color}
                       className="candidate-dot"
-                      style={{ '--d': `${600 + si * 250 + i * 180}ms`, '--final-opacity': 1 }} />
+                      style={{
+                        '--d': `${600 + si * 250 + i * 180}ms`,
+                        '--final-opacity': 1,
+                        '--dx': '0px',
+                        '--dy': '0px',
+                        '--idle-scale': 0,
+                        '--idle-opacity-boost': 0,
+                      }} />
             ))}
             {/* right-edge label */}
             <text x={xs[xs.length - 1] + 8} y={pts[pts.length - 1][1] + 4}

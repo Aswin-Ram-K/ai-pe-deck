@@ -2923,6 +2923,59 @@ if (tweaksRoot) ReactDOM.createRoot(tweaksRoot).render(<TweaksHost />);
     }, totalMs);
   };
 
+  /* ─── Intro → Slide 1 interception ────────────────────────────
+   * Intercept ALL forward-advance paths (keyboard ArrowRight/Space/
+   * PageDown, on-screen Next button, phone START via deck.next()) so
+   * that leaving the Intro slide always runs the full 15.6s cosmic
+   * sequence — not just the phone START path. This lets desktop
+   * testing (hitting →) exercise the same cinematic flow the phone
+   * triggers, with no code duplication.
+   *
+   * All these entry points converge on deck._go(targetIndex, reason).
+   * Monkey-patching it catches them in one place. The `.intro-
+   * exploding` class (added by SlideIntro.triggerExplode, persists
+   * through the whole sequence) is the signal that the cosmic flow
+   * is already running — we bypass interception in that case so the
+   * scheduled deck.next() at t=13800ms advances cleanly.
+   * ─────────────────────────────────────────────────────────── */
+  {
+    const INTRO_NEXT_DELAY_MS = 13800;  // mirrors remote-host.js INTRO_EXPLODE_TO_NEXT_MS
+    const origGo = deck._go.bind(deck);
+    let pendingGoTimeout = null;
+
+    deck._go = function patchedGo(targetIndex, reason) {
+      const currentIdx = deck._index;
+      const currentSection = deck.querySelector(
+        `section:nth-child(${currentIdx + 1})`
+      );
+      const onIntro = currentSection?.getAttribute('data-label') === 'Intro';
+      const advancingForward = targetIndex === currentIdx + 1;
+      const alreadyExploding = document.querySelector('.intro-exploding');
+
+      if (onIntro && advancingForward && !alreadyExploding) {
+        // Fresh desktop/phone advance from Intro — run the cinematic arc.
+        window.dispatchEvent(new CustomEvent('deck-explode'));
+        pendingGoTimeout = setTimeout(() => {
+          pendingGoTimeout = null;
+          origGo(targetIndex, reason);
+        }, INTRO_NEXT_DELAY_MS);
+        return;
+      }
+
+      // If the user manually advances (second keypress, R key, etc.)
+      // while a scheduled intro advance is pending, cancel it so we
+      // don't double-advance and overshoot past the target slide.
+      if (pendingGoTimeout) {
+        clearTimeout(pendingGoTimeout);
+        pendingGoTimeout = null;
+      }
+
+      origGo(targetIndex, reason);
+    };
+    // Patch deck.next() to route through patched _go.
+    deck.next = function patchedNext() { deck._go(deck._index + 1, 'api'); };
+  }
+
   deck.addEventListener('slidechange', (e) => {
     const { slide, previousSlide, reason } = e.detail || {};
     const sameSlide = previousSlide && previousSlide === slide;

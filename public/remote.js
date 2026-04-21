@@ -331,7 +331,10 @@
   }
 
   function teleOnSlideChange(slideIndex) {
-    if (!tele.script || !tele.slideOffsets[slideIndex]) return;
+    // offsetTop of slide 1 is 0 (topmost section), so check for
+    // undefined rather than falsy — !0 would early-return and the
+    // teleprompter would never un-hide its "Waiting for slide 1" veil.
+    if (!tele.script || tele.slideOffsets[slideIndex] === undefined) return;
 
     if (!tele.started) {
       // Start teleprompter on first non-Intro landing. The expected

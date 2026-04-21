@@ -1,7 +1,7 @@
 # CLAUDE.md — `ai-pe-deck` (AI in Power Electronics)
 
-**Last refreshed:** 2026-04-21 (post-teleprompter session)
-**Repo:** `github.com/Aswin-Ram-K/ai-pe-deck` · branch `main` · tracked HEAD `d68e51b`
+**Last refreshed:** 2026-04-21 (post-audio engineering session — cinematic big-bang bed + impact stack)
+**Repo:** `github.com/Aswin-Ram-K/ai-pe-deck` · branch `main` · tracked HEAD `394e3cc`
 **Also read:** `PROJECT_CONTEXT.md` (design-decision log) · `SESSION_STATE.md` (session handoff + last-prompts packet) · `SPEAKER_SCRIPT.md` (canonical teleprompter source, Stark-edition) · `UNDERSTANDING_NOTES.md` (per-slide Q&A preparation) · `README.md` (user-facing run guide)
 
 ---
@@ -33,8 +33,10 @@ React+Babel load from CDN and `deck.jsx` is transpiled in-browser at boot.
 | ✅ Committed | **Timers** — total (17:00 countdown) + per-slide countdown with red-flash + 1100 Hz beep on overtime; flex-sibling strip between tele-bar and teleprompter |
 | ✅ Committed | **Launchpad legends** — format legend (4 in-style samples) + scrollable abbreviations panel (36 entries) below BIG BANG button |
 | ✅ Committed | `UNDERSTANDING_NOTES.md` — per-slide conversational explanations + Q&A preparation (42 KB, repo root + Desktop mirror) |
+| ✅ Committed | **Countdown-to-flash sync** — phone fires `{action:'start'}` at T+3.55 s so count=0 "GO" coincides with the visual big-bang flash at +6.45 s into cosmic (not the cosmic *start*) |
+| ✅ Committed | **Deck-side cinematic audio** (classroom speakers): ambient bed (sub drone A1 + A3/E4/A4 pad with pulse-synced wobble LFO 0.8→18 Hz + decoupled dual-delay space reverb) + tension riser (noise 200→8000 Hz + saw 110→880 Hz) + A6 shimmer-bell anticipation + Tenet-style reverse swell (4500→300 Hz bandpass) + sidechain duck during held singularity + 5-layer broadband impact stack on the flash frame (sub kick / mid body / hi transient / FM tonal / roar). All procedural WebAudio, zero asset fetches. Gesture-unlock listener on deck window. |
 
-**Branch state:** clean, HEAD `d68e51b` pushed to `origin/main`. Pages deploys green (last run `24736506643`).
+**Branch state:** clean, HEAD `394e3cc` pushed to `origin/main`. Pages deploys green (last run `24738214741`).
 
 ---
 
@@ -174,6 +176,43 @@ app/
 - **Timers:** total (17:00 → 0:00) + per-slide budget. Overtime fires 1100 Hz WebAudio beep + red flash (`body.slide-overtime`, 1.5 Hz pulse). Single-shot beep latched by `slideBeepedOver`.
 - **Debug overlay:** append `?debug=1` to the URL. Shows build version, phase (`idle/breathing/scrolling/end-reached`), offsets, heights, pause flags, timer values. Refreshes at 400 ms.
 - **Cache-bust:** `remote.html` loads `remote.js?v=<BUILD_VERSION>` and `remote.js` fetches `speaker-script.json?v=<BUILD_VERSION>`. Bump `BUILD_VERSION` on every behavioral change so iOS Safari re-fetches.
+
+## Cinematic audio subsystem (built 2026-04-21, post-teleprompter)
+
+All deck-side in `public/remote-host.js`. Orchestrated by `startCosmicBigBang()`, which schedules every layer relative to the explode moment using `AudioContext.currentTime` offsets (sample-accurate — no `setTimeout` jitter).
+
+**Phase map (seconds from explode fire):**
+
+| t (s) | Visual phase | Audio event |
+|---|---|---|
+| 0.00-3.50 | tensioning (pulse 0.8→2 Hz) | bed fades in over 5.5 s; pad wobble + 50 Hz sub pulse track visual freq |
+| 3.50-6.00 | intensifying (pulse 2→18 Hz) | wobble + pulse race to 18 Hz; tension riser builds |
+| 6.00-6.35 | imploding | reverse swell (bandpass 4500→300 Hz, env quadratic build) |
+| 6.35-6.45 | held singularity | sidechain duck to 0.20 (bed drops ~14 dB) |
+| 6.45 | flashing | **5-layer impact stack fires** on impactBus (direct to destination) |
+| 6.45-10.5 | ejecta + erupt | impact roar tail decays through reverb; wobble subsides to 0.3 Hz |
+| 10.80-12.6 | settled + enter | 1.8 s release |
+
+**Critical design decisions:**
+
+1. **Reverb topology is DECOUPLED dual-delay**, not shared-LPF. An earlier shared-LPF topology had total open-loop gain ≈ 0.88 at comb-filter eigenfrequencies and produced a slow-building "stuck whine." Each delay now has its own LPF + self-feedback (gain 0.40, safely stable). Do NOT revert to shared feedback.
+
+2. **Impact layers bypass master+duck**, routing through their own `impactBus` direct to `ctx.destination`. If they went through the ducked master, the 50 ms duck release would attenuate the impact's first 4-8 ms of attack transients — killing the contrast the duck was designed to create.
+
+3. **Pad wobble LFO frequency tracks the visual pulse wave** (0.8 → 18 Hz via `exponentialRampToValueAtTime`). This is the "fabric of spacetime wobbling" effect — audio and visual pulse are the same event from two sensory channels.
+
+4. **Countdown-to-flash sync**: `send({action:'start'})` fires at `COUNTDOWN_SEC*1000 - VISUAL_FLASH_OFFSET_MS` ms, not at count=0. Keeps the 10 s composure window while aligning count=0 with the visual big bang.
+
+5. **Audio unlock is a once-only listener** on pointerdown/keydown/touchstart. If presenter never interacts with the deck window, audio is silent but cosmic visuals still run. Document in user-facing notes: "click the deck window once before tapping BIG BANG on the phone."
+
+6. **All synthesized, zero assets.** WebAudio primitives only — no `.mp3`/`.wav` fetches. This was a deliberate Murphy's-Law-first decision: venue Wi-Fi could be flaky at showtime, and a missed asset fetch would mute the whole cinematic.
+
+**Tuning knobs (constants at top of `remote-host.js`):**
+- `AMBIENT_SUSTAIN_GAIN = 0.16` — bed max volume
+- `AMBIENT_FADE_IN_SEC = 5.5` — drawn-out transition
+- `AMBIENT_WOBBLE_DEPTH_MAX = 0.14` — pad AM depth
+- `AMBIENT_DUCK_DEPTH = 0.20` — held-singularity duck level
+- Per-layer impact peak gains are inline in `_scheduleBigBangImpact`
 
 ## Active work / next steps (as of 2026-04-21, session end)
 

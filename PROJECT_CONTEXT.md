@@ -156,6 +156,7 @@ local JSON fetch of `speaker-notes.json`.
 - 2026-04-21: Session paused with two features queued for next session (5-second countdown on BIG BANG + scrolling speaker-notes teleprompter on remote). See `SESSION_STATE.md` for handoff detail.
 - 2026-04-21: Full audit (log `022-ai-pe-deck-audit-2026-04-21`) → added `package-lock.json`, pinned Node 20.18, SRI-hashed PeerJS, tightened stale voice-refs. `CLAUDE.md` initialized at project root.
 - 2026-04-21 (afternoon): **Teleprompter session.** Shipped the full phone-remote teleprompter subsystem: Stark-edition script + syllable-paced 17 min distribution + accumulator scroll engine + breather + end-of-slide pause + hold-to-pause + pause button + scrub + independent timers + overtime red-flash + format legend + scrollable abbreviations + `UNDERSTANDING_NOTES.md` + cosmic-intro v5 orbital swirl + 10 s countdown. HEAD `d68e51b`. See §§ 6-10 below for decisions.
+- 2026-04-21 (evening): **Audio engineering session.** Deck-side cinematic audio subsystem for the BIG BANG intro. Shipped: procedural WebAudio ambient bed (sub drone + A3/E4/A4 pad with pulse-synced wobble LFO 0.8→18 Hz + decoupled dual-delay space reverb), countdown-to-flash sync (phone sends `{action:'start'}` at T+3.55s so count=0 aligns with visual big-bang), tension riser (noise+saw crescendo), reverse swell (Tenet-style negative attack), sidechain duck during held singularity, 5-layer broadband impact stack on flash frame (sub kick + mid body + hi transient + FM tonal + roar). Fixed cross-coupled-reverb whine bug (decoupled topology). HEAD `394e3cc`. See §§ 12-17 below for decisions.
 
 ---
 
@@ -232,3 +233,78 @@ Originally 5 s per presenter brief. Extended to 10 s at session end for a longer
 | `public/remote.html` / `public/remote.js` | Heavy expansion — State C countdown, timer strip, pause/scrub, legends, debug overlay, cache-bust |
 | `public/deck.jsx` | SlideIntro vertex shader: orbital attributes + spiral-collapse term |
 | `package.json` | Added dev deps `mammoth` (legacy DOCX import path) and `syllable` |
+
+---
+
+## Session-7 design decisions (cinematic big-bang audio, 2026-04-21 evening)
+
+### 12 · Deck-side procedural audio, not phone-side, not asset-based
+
+**What was decided:** all cinematic audio (ambient bed + impact stack) runs on the **deck** (classroom speakers) via procedural WebAudio synthesis. Phone keeps only the countdown voice + 440/880 Hz ticks + GO tone on earphones.
+
+| Alternative | Why not |
+|---|---|
+| All audio on phone (earphones) | Audience doesn't hear the cinematic — defeats the point of "driving the animation home" for the room |
+| All audio on deck (including countdown) | Countdown is the presenter's *private* pacing cue; playing it on classroom speakers would telegraph the pre-show internal timing |
+| Download `.mp3` / `.wav` loops and play back via `<audio>` | Venue Wi-Fi could be flaky at showtime; any uncached asset fetch is a Murphy's-Law hazard. Also: licensing / royalty complexity for a classroom demo |
+| Tone.js or other WebAudio framework | 200-500 KB bundle for features the raw WebAudio API handles in ~400 lines. No build step philosophy precludes it anyway |
+
+**Why this won:** two-device audio separates the presenter's pacing cue from the audience's cinematic experience. Procedural synthesis guarantees zero network dependency at showtime — the whole 12.6 s sequence lives in the already-loaded JS bundle. Trade-off: more code than loading an asset would be, but the code is deterministic and debuggable.
+
+### 13 · Countdown-to-flash sync: `send({action:'start'})` delayed, not at count=0
+
+**What was decided:** phone fires `{action:'start'}` at `T + (COUNTDOWN_SEC * 1000 - VISUAL_FLASH_OFFSET_MS)` ms (= T+3.55 s with current constants), not at count=0. Cosmic visual thus begins 3.55 s into the countdown, and its +6.45 s flash frame aligns exactly with count=0 "GO".
+
+**Alternative rejected:** fire explode at count=0 (the natural thing). Rejected because the countdown would then be a *pre-amble* to the cosmic tensioning phase instead of *being* the tensioning phase. Cinematic convention: the countdown should **resolve into** the payoff visually, not precede it.
+
+**Second decision embedded:** the 10 s countdown stays 10 s (don't shorten to 6.45 s). The extra 3.55 s before explode is the presenter's composure window — "ten, nine, eight…" with visuals still intro-static, then at "seven" the cosmic begins and tension builds into the flash at "zero."
+
+### 14 · Cinematic impact structure: 5-layer broadband stack with sidechain duck
+
+**What was decided:** the flash-frame hit is 5 parallel impact layers (sub kick + mid body + hi transient + FM tonal + roar), preceded by a 100 ms sidechain duck on the ambient bed, each layer occupying a distinct frequency band.
+
+| Alternative | Why not |
+|---|---|
+| Single filtered-noise burst (the original "whoosh") | Too thin — no sub energy, no tonal content, no anticipation. Audience hears "a noise" not "an event" |
+| Real gunshot / explosion sample | Wrong aesthetic for cosmic big bang — that's combustion, this is a universe being born. Also: licensing, caching, fidelity-on-classroom-speakers all uncertain |
+| 2-3 layer stack (sub + body only) | Lacks the hi-transient "crack" that gives impacts clarity on small speakers. Mid-body alone gets lost in room resonance |
+| Sidechain compression during impact | WebAudio's `DynamicsCompressorNode` smashes transients — exactly what we don't want for cinematic punch |
+
+**Why this won:** research from Pixflow / Ableton / Native Instruments cinematic-impact guides converges on 3-part structure (build-up → hit → tail) and frequency-layered impacts (sub 40-120 Hz + mid body + hi 2-5 kHz). Applied to this cosmic context with additions: FM tonal layer (gives pitch so the impact isn't just "noise-energy"), reverse swell (Tenet-technique negative attack into the impact), sidechain duck (silence-before-impact for contrast).
+
+**Critical routing decision:** impact layers go through `impactBus → ctx.destination`, bypassing `master → duck → destination`. If they went through the duck, its 50 ms release would arrive during the impact's first 4-8 ms of attack transients, attenuating them by ~60%. Bypassing means the impact hits at its synthesized peak level; the bed is what's ducked, not the impact.
+
+**Key data:**
+- Impact-to-bed contrast ratio: impact peak ≈ 0.52 (sub kick) vs bed sustain 0.16 = +10.3 dB
+- Total peak during impact (layers sum): ~0.9 at broadband, individually filtered frequency bands prevent coherent summing clipping
+- Each layer's reverb send partial (0.4-0.9 wet amount) so impact has tail without being pure-dry slap
+
+### 15 · Pad wobble LFO frequency tracks the visual pulse wave
+
+**What was decided:** the pad chord's amplitude-modulation LFO frequency ramps `exponentialRampToValueAtTime(18.0, t0 + 6.0)` from a start of 0.8 Hz — identical curve to the visual radial pulse wave in SlideIntro's shader. LFO depth also grows 0.04 → 0.14 as the visual tension builds, then subsides to 0.03 by t+7.2 s.
+
+**Alternative rejected:** fixed 0.15 Hz breathing LFO (the original "calm ambient" pattern). Rejected because the visual pulse is AGGRESSIVELY accelerating, and a calm-breathing pad felt disconnected from the on-screen tremor.
+
+**Why this won:** the ear maps simultaneous audio tremolo and visual tremor to a SINGLE event — "the fabric of spacetime is vibrating." Cross-modal binding makes the cosmic intro feel like one unified phenomenon being sensed in two channels, not two tracks running in parallel.
+
+**Trade-off:** 18 Hz tremolo on sine pad chords creates audible sidebands at ±18 Hz around each fundamental (220, 330, 440 Hz). This is perceptible as "motion" in the pad texture — intentional, matches the visual chaos.
+
+### 16 · Reverb topology: decoupled dual-delay (the ringing-whine bug)
+
+**What was decided:** reverb uses two independent delay lines, each with its OWN feedback gain + lowpass in its OWN self-feedback loop.
+
+**What was tried first (and failed):** shared-LPF topology — both delays fed a single lowpass whose output returned to *both* delays. Total open-loop gain around any single delay = its own 0.44 + cross-coupled 0.44 from the other = 0.88. Marginally stable. Energy accumulated at comb-filter eigenfrequencies (where both taps reinforced) and sustained indefinitely as a "stuck whine."
+
+**Why decoupled wins:** each delay's open-loop gain is now 0.40 (self-feedback only). Stable at every frequency. The two delays still sum at the wet bus so the reverb still has a natural "space" character, but energy can't circulate between the loops. The bug is structurally impossible to return.
+
+**Engineering principle:** marginal stability is sneakier than instability. Gain 1.1 blows up instantly and you hear it. Gain 0.88 decays slowly enough to sound "intentional" at first — just a long reverb tail — until you notice specific pitches persisting way longer than they should. The cure is structural (decouple), not cosmetic (lower the knob).
+
+### 17 · Softer, longer ambient fade-in
+
+**What was decided:** `AMBIENT_FADE_IN_SEC` 3.0 → 5.5 s, `AMBIENT_SUSTAIN_GAIN` 0.26 → 0.16.
+
+**Alternative rejected:** match the visual tensioning phase duration exactly (3.5 s). Rejected because the user reported 3 s felt "sharp" at the prior sustain level. Extending to 5.5 s softens the onset so the bed whispers in under the first few seconds of countdown instead of arriving as a noticeable *event*.
+
+**Why the sustain drop matters:** lower bed = more headroom for the impact layers. Impact-to-bed contrast went from ~3 dB (old values) to ~10 dB (new values). The hit now lands disproportionately loud to the ear, without the impact layers themselves being louder in absolute peak.
+
+---

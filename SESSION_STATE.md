@@ -1,9 +1,9 @@
 # SESSION_STATE.md — AI-PE Deck
 
-**Paused:** 2026-04-21 (afternoon session — teleprompter + pacing + legends + cosmic-intro-v5 + 10 s countdown)
+**Paused:** 2026-04-21 (evening session — cinematic big-bang audio: deck-side ambient bed, countdown-to-flash sync, reverb whine fix, pad wobble, 5-layer impact stack)
 **Branch:** `main` (clean — no uncommitted tracked files)
-**HEAD:** `d68e51b` feat(countdown): extend BIG BANG countdown 5s → 10s
-**Main status:** pushed to `origin/main`; Pages deploy `24736506643` in_progress at pause (typically ~25 s to green).
+**HEAD:** `394e3cc` feat(intro): cinematic big-bang audio + pad wobble + reverb fix
+**Main status:** pushed to `origin/main`; Pages deploy `24738214741` in_progress at pause (typically ~25 s to green).
 
 ---
 
@@ -24,10 +24,20 @@ npm run build:script       # regenerate speaker-script.json from SPEAKER_SCRIPT.
 ### GitHub Actions
 Workflow: `.github/workflows/pages.yml` → deploys `public/` on every push to `main`. Logs: `https://github.com/Aswin-Ram-K/ai-pe-deck/actions`.
 
-### Two tunable knobs if pacing / visual feel needs adjustment
-- `TELE_SPEED_MULTIPLIER` at top of `public/remote.js` (currently `1.0` = exact syllable budgets). Higher = slower scroll across all slides proportionally.
+### Tunable knobs
+
+**Pacing / teleprompter (`public/remote.js`):**
+- `TELE_SPEED_MULTIPLIER` (currently `1.0` = exact syllable budgets). Higher = slower scroll across all slides proportionally.
 - `BREATHER_MS` (currently `1000`) — hold at slide top before scroll begins.
 - `COUNTDOWN_SEC` (currently `10`) — BIG BANG countdown length.
+- `VISUAL_FLASH_OFFSET_MS` (currently `6450`) — how far before count=0 the explode fires so the visual flash aligns with "GO".
+
+**Audio (`public/remote-host.js`, deck-side ambient + impact):**
+- `AMBIENT_SUSTAIN_GAIN` (currently `0.16`) — bed max volume. Raise to 0.20 if inaudible on classroom speakers; lower to 0.12 if it competes with presenter's voice.
+- `AMBIENT_FADE_IN_SEC` (currently `5.5`) — drawn-out softer transition.
+- `AMBIENT_WOBBLE_DEPTH_MAX` (currently `0.14`) — depth of pad's pulse-synced AM wobble. Lower = subtler tremor.
+- `AMBIENT_DUCK_DEPTH` (currently `0.20`) — how silent the bed gets during the 100 ms "held breath" right before impact. Lower = more dramatic contrast.
+- Impact layer peaks are inline in `_scheduleBigBangImpact` (sub 0.52, mid 0.38, hi 0.28, FM 0.22, roar 0.20). Scale proportionally if the hit is too gentle or too hot.
 
 ---
 
@@ -47,29 +57,82 @@ Workflow: `.github/workflows/pages.yml` → deploys `public/` on every push to `
 
 ## Last user prompts (VERBATIM, reverse-chronological)
 
-> **"done"**
+> **"commit*"**
 
-> **"One final change: can you increase the initial count down to 10 seconds instead of 5?"**
+> **"And come at all changes in the GitHub repo as well."**
 
-> **"I might have had my phone window running, and that's why the background server issue might be happening. Maybe just restart it and check if that works."**
+> **"Push everything that needs to be pushed."**
 
-> **"There are a lot of abbreviations and short forms used in the script. I want a scrollable legend of these abbreviations as well on the starting page of big bang. In case you have to reduce the size of the big bang button, I don't mind. Slide six has a lot of technical jargon, and as nice as it sounds to present, I want to have a better understanding of what exactly I'm saying. Can you break down every slide and the presentation notes into a more conversational understanding for me to understand to answer questions at the end of the session? Save this as a separate understanding file for this project for me in this folder, and make a copy of it on the desktop."**
+> **"That is just perfect! Good job!"**
 
-> **"There is different formatting in the scrolling script. I don't remember exactly what each formatting refers to. On the starting page button, I want a small legend describing what each of the formats of text in the scrolling script means."**
+> **"I like the ambient pad sounds, but I just described it as a general structure for the ambience I was looking for. I want the sound effect to support the animation you've created in terms of the explosion as well. I want the sound effects to drive the animation home, so do necessary audio engineering, do some Do any web searches as well to achieve this?"**
 
-> **"Everything that we have designed so far works well. I want to change something on the deck, the first slide of particles. They just seem to be floating around. I want them to feel like particles floating around like a star in a circle, and once I press start they kind of spiral into collapsing into the center then explode, rather than just statically collapsing inside."**
+> **"Also, I want the pad background to wobble along with the wobbling in the fabric of the animation space, increasing in frequency just like it does. Also increase the fade-in period a little bit more. Three seconds seems a little too sharp for the loudness you are achieving, so reduce the maximum loudness and draw out the transition a little bit more."**
 
-> **"Make the scrolling feed pause button independent of the timer. The timer should be independent as soon as the presentation starts, and I want to be able to scrub through the script as well. Once I lift my finger, it should go back to the regular scrolling speed. Achieve that for me!"**
+> **"Also, the audio engine is doing some weird stuff where I think the beeping reminder for the timer on the script is actually getting built up on the deck side. It is slowly building up to an annoying whine and it gets stuck there. See why it is happening, because it seems to happen for the countdown, because it happens exactly at the end of the first light timer. It just gets stuck at that annoying vibrational sound. Fix it!"**
 
-> **"Okay, now add a feature where, when I hold the scrolling window on my phone, it pauses the scrolling action, and when I lift my thumb, it continues… Also add a small pause button to the bottom left corner of the scrolling window… Also, based on the time frames that you split the scrolling speed on, give me: a full duration countdown timer and also a per-window countdown timer that turns red and flashes with a beeping sound."**
+> **"Also, the count on itself should be to the point of the big bang in the animation, not to the start of the animation."**
 
-> **"After the scrolling comes to the end part of every slide section, I want it to pause, and I want it to continue only when I press the next slide button. Also, I don't want the scrolling animation to start immediately. Give it a one second breather so that I can actually visually capture the first top portion of the script before it scrolls away."**
+> **"Also, remember the count is on the remote device, and the sound effect has to be on the slide deck device."**
 
-> **"Everything starts in the teleprompter but is working now for the pacing. Take the entire content of the script now. Remember, remove any non-technical quips. I want nerdy quips… All the quips I wanted to be Tony Stark-esque, sarcastic, egotistical, maybe borderline even philosophical, but technically relevant."**
+> **"So I didn't hear any of the changes. Is it because it has not yet been pushed?"**
+
+> **"Okay, the only part left now is adding an ethereal ambiance space and galaxy-inspired sound effect for the big bang effect that we have created at the start of the presentation."**
 
 ---
 
-## Decisions made this session (with the prompts that provoked them)
+## Prior session's prompts (teleprompter session — kept for context)
+
+> **"done"** · **"One final change: can you increase the initial count down to 10 seconds instead of 5?"** · **"I might have had my phone window running, and that's why the background server issue might be happening. Maybe just restart it and check if that works."** · **"There are a lot of abbreviations and short forms used in the script. I want a scrollable legend of these abbreviations as well on the starting page of big bang…"** · **"There is different formatting in the scrolling script. I don't remember exactly what each formatting refers to. On the starting page button, I want a small legend describing what each of the formats of text in the scrolling script means."** · **"Everything that we have designed so far works well. I want to change something on the deck, the first slide of particles. They just seem to be floating around. I want them to feel like particles floating around like a star in a circle…"** · **"Make the scrolling feed pause button independent of the timer…"** · **"Okay, now add a feature where, when I hold the scrolling window on my phone, it pauses the scrolling action, and when I lift my thumb, it continues…"** · **"After the scrolling comes to the end part of every slide section, I want it to pause…"** · **"Everything starts in the teleprompter but is working now for the pacing. Take the entire content of the script now. Remember, remove any non-technical quips. I want nerdy quips… All the quips I wanted to be Tony Stark-esque, sarcastic, egotistical, maybe borderline even philosophical, but technically relevant."**
+
+---
+
+## Decisions made this session (audio engineering, with the prompts that provoked them)
+
+### D14 — Ethereal ambient bed (initial pass, later deepened)
+**Prompt:** "the only part left now is adding an ethereal ambiance space and galaxy-inspired sound effect for the big bang effect…"
+**Landed:** Deck-side procedural WebAudio in `public/remote-host.js`. Sub drone (A1 saw pair 55/55.5 Hz, LPF 180 Hz), A3/E4/A4 detuned sine pad chord, dual-delay "space" reverb. All synthesized, zero asset fetches. Gesture unlock listener (pointerdown/keydown/touchstart) on deck window. Commit `c2113b4`.
+
+### D15 — Countdown-to-flash sync (audio-visual alignment)
+**Prompt:** "the count on itself should be to the point of the big bang in the animation, not to the start of the animation."
+**Landed:** Phone-side `send({action:'start'})` fires at T+3.55s via setTimeout (was T+10s at count=0). The +6.45s cosmic-intro flash then coincides with count=0 "GO" instead of the cosmic *start*. `VISUAL_FLASH_OFFSET_MS = 6450` constant at top of `remote.js`. Commit `c2113b4`.
+
+### D16 — Audio location: deck speakers, not phone earphones
+**Prompt:** "remember the count is on the remote device, and the sound effect has to be on the slide deck device."
+**Landed:** All ambient + impact audio runs on the deck (classroom speakers). Phone keeps only countdown voice + 440/880 Hz ticks + GO tone (earphones). Two-device audio: presenter's private pacing cue stays private, cinematic bed reaches the audience. Commit `c2113b4`.
+
+### D17 — Reverb whine bug fix (decoupled dual-delay topology)
+**Prompt:** "the audio engine is doing some weird stuff where I think the beeping reminder for the timer on the script is actually getting built up on the deck side. It is slowly building up to an annoying whine and it gets stuck there…"
+**Root cause:** Two delay lines fed into one shared lowpass whose output returned to BOTH delays → total open-loop feedback ≈ 0.88, marginally stable → energy accumulated at comb-filter eigenfrequencies → stuck ringing.
+**Landed:** Decoupled topology: each delay has its OWN feedback gain + its OWN lowpass in a self-contained self-feedback loop. Each path's open-loop gain is 0.40, safely stable at every frequency. Also: ALL routing nodes (reverb network included) tracked in `cosmicAmbient.nodes` for full cleanup. Commit `394e3cc`.
+
+### D18 — Pad wobble matches visual pulse frequency
+**Prompt:** "I want the pad background to wobble along with the wobbling in the fabric of the animation space, increasing in frequency just like it does."
+**Landed:** Removed 0.15 Hz breathing LFO. New wobble LFO frequency ramps `0.8 → 18 Hz` across 0-6 s via `exponentialRampToValueAtTime` — identical curve to the visual pulse wave in SlideIntro. LFO depth also grows (0.04 → 0.14) as tension builds, then subsides post-impact. Pad now shakes with the fabric of spacetime. Commit `394e3cc`.
+
+### D19 — Softer, longer fade-in
+**Prompt:** "increase the fade-in period a little bit more. Three seconds seems a little too sharp for the loudness you are achieving, so reduce the maximum loudness and draw out the transition a little bit more."
+**Landed:** `AMBIENT_FADE_IN_SEC`: 3.0 → 5.5s. `AMBIENT_SUSTAIN_GAIN`: 0.26 → 0.16. Lower bed also leaves more headroom for the impact layers. Commit `394e3cc`.
+
+### D20 — Cinematic 5-layer impact stack at the flash frame
+**Prompt:** "I want the sound effect to support the animation you've created in terms of the explosion as well. I want the sound effects to drive the animation home, so do necessary audio engineering, do some Do any web searches as well…"
+**Research:** Pixflow/Ableton/Native Instruments cinematic impact guides (three-part structure: build-up → impact → tail; frequency layering: sub 40-120 Hz + mid body + hi 2-5 kHz transient); Tenet (2020) reverse-swell "negative attack" technique; MDN WebAudio advanced techniques (exponentialRampToValueAtTime on oscillator frequency for percussive sweeps, FM for tonal impacts).
+**Landed:** Five new layers orchestrated by `startCosmicBigBang()`:
+- **Radial pulse bass** (0-7 s): 50 Hz sine AM'd by LFO 0.8→18 Hz, chest-felt
+- **Tension riser** (3.5-6.45 s): noise bandpass 200→8000 Hz + saw 110→880 Hz crescendo
+- **Reverse swell** (6.0-6.45 s): envelope-reversed noise with bandpass 4500→300 Hz (Tenet trick)
+- **Impact duck** (6.20-6.45 s): sidechain bed to AMBIENT_DUCK_DEPTH=0.20 for 100 ms "held breath" window before impact, releases exactly at flash frame
+- **Impact stack** (6.45 s, 5 parallel sub-layers routed direct to destination bypassing master/duck so attack transients hit at full peak):
+  - Sub kick 90→30 Hz sine, 1.3 s body
+  - Mid body 900→150 Hz bandpass noise, 0.45 s
+  - Hi transient 2.5+ kHz noise snap, 80 ms
+  - FM tonal (carrier 220 Hz / mod 440 Hz), 0.5 s — gives impact PITCH
+  - Roar 800→40 Hz bandpass noise, 2.5 s tail
+Commit `394e3cc`.
+
+---
+
+## Decisions from the prior teleprompter session (kept for reference)
 
 ### D1 — Countdown and cosmic intro layering
 **Prompt:** "The countdown takes over the full screen, And I would like this to have an audio prompt because I'm going to be connecting my earphones to get this specific audio prompt."
@@ -149,9 +212,10 @@ User said "Skip the maintenance part because this isn't going to be a recurring 
 ## Working-tree snapshot
 
 - Branch: `main` clean (no modified tracked files)
-- Commits this session: 11 (`4a49e41..d68e51b`, all pushed)
-- Remote HEAD after push: `d68e51b`
-- Untracked at session end: none (SPEAKER_SCRIPT.md, UNDERSTANDING_NOTES.md, speaker-script.json all committed this session)
+- Commits this audio session: 2 (`c2113b4`, `394e3cc`), plus docs auto-update (`1de6fc7`) from the prior session handoff
+- Remote HEAD after push: `394e3cc`
+- Untracked at session end: none
+- Total commits on `main` today (teleprompter + audio): 13 pushed
 
 ### Tests-at-pause
 

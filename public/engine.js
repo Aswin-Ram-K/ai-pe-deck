@@ -655,6 +655,10 @@
    * reveal steps, we still extract ONE final phrase per slide (used
    * to auto-advance to next slide).
    * ──────────────────────────────────────────────────────────── */
+  // Cardinal number-words (one/two/three…) are deliberately NOT in
+  // STOPWORDS. We normalize both sides of the match to digits, so
+  // "three" on either side becomes "3" — letting "three things" /
+  // "four tools" / "ten iterations" pass the 2-word content check.
   const STOPWORDS = new Set(`a an the of in on at to for and or but if so as
     is are was were be been being have has had do does did not no this that
     these those i we you they he she it my our your their his her its me us
@@ -663,8 +667,7 @@
     how what who which while during until since because although though also
     too also can could would should may might will shall does did done
     you'll we'll they'll i've we've you've they've it's that's there's
-    here's one two three four five six seven eight nine ten first second
-    third next last final basic simple`.split(/\s+/));
+    here's first second third next last final basic simple`.split(/\s+/));
 
   function cleanWord(w) {
     return w.toLowerCase().replace(/[^a-z0-9\-']/g, '');
@@ -672,6 +675,83 @@
   function isContent(w) {
     const c = cleanWord(w);
     return c && c.length > 2 && !STOPWORDS.has(c);
+  }
+
+  /* ───────────────────────────────────────────────────────────
+   * Number-word normalization
+   *
+   * Speech recognition returns numbers as DIGITS ("15", "78",
+   * "2021") but the speaker notes spell them out as WORDS
+   * ("fifteen", "seventy-eight", "2021"). Without normalization,
+   * a trigger like "seventy-eight percent" never matches speech
+   * "78 percent" — so the advance stalls until enough context
+   * catches up to the next non-numeric word. That's the ~1s
+   * delay you'd feel on heavy-number slides.
+   *
+   * We apply this to BOTH the trigger extraction (before storing)
+   * and the speech buffers (on every onresult) so the comparison
+   * is always digit-vs-digit.
+   * ─────────────────────────────────────────────────────────── */
+  const N_ONES  = { zero:0, one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9 };
+  const N_TEENS = { ten:10, eleven:11, twelve:12, thirteen:13, fourteen:14, fifteen:15, sixteen:16, seventeen:17, eighteen:18, nineteen:19 };
+  const N_TENS  = { twenty:20, thirty:30, forty:40, fifty:50, sixty:60, seventy:70, eighty:80, ninety:90 };
+  function numVal(w) {
+    const k = w.toLowerCase();
+    return N_ONES[k] ?? N_TEENS[k] ?? N_TENS[k] ?? null;
+  }
+
+  function normalizeNumbers(text) {
+    if (!text) return text;
+    let out = text;
+    // "two thousand twenty-one" → "2021"
+    out = out.replace(/\b([a-z]+)\s+thousand\s+([a-z]+)[-\s]+([a-z]+)\b/gi, (m, a, b, c) => {
+      const th = N_ONES[a.toLowerCase()] ?? N_TEENS[a.toLowerCase()];
+      const te = N_TENS[b.toLowerCase()];
+      const on = N_ONES[c.toLowerCase()];
+      return (th != null && te != null && on != null) ? String(th * 1000 + te + on) : m;
+    });
+    // "two thousand twenty" → "2020"
+    out = out.replace(/\b([a-z]+)\s+thousand\s+([a-z]+)\b/gi, (m, a, b) => {
+      const th = N_ONES[a.toLowerCase()] ?? N_TEENS[a.toLowerCase()];
+      const rest = numVal(b);
+      return (th != null && rest != null) ? String(th * 1000 + rest) : m;
+    });
+    // "two thousand" → "2000"
+    out = out.replace(/\b([a-z]+)\s+thousand\b/gi, (m, a) => {
+      const v = N_ONES[a.toLowerCase()] ?? N_TEENS[a.toLowerCase()];
+      return v != null ? String(v * 1000) : m;
+    });
+    // "five hundred fifty-five" / "five hundred and fifty-five" → "555"
+    out = out.replace(/\b([a-z]+)\s+hundred\s+(?:and\s+)?([a-z]+)[-\s]+([a-z]+)\b/gi, (m, a, b, c) => {
+      const h = N_ONES[a.toLowerCase()];
+      const te = N_TENS[b.toLowerCase()];
+      const on = N_ONES[c.toLowerCase()];
+      return (h != null && te != null && on != null) ? String(h * 100 + te + on) : m;
+    });
+    // "five hundred fifty" / "five hundred and fifty" → "550"
+    out = out.replace(/\b([a-z]+)\s+hundred\s+(?:and\s+)?([a-z]+)\b/gi, (m, a, b) => {
+      const h = N_ONES[a.toLowerCase()];
+      const rest = numVal(b);
+      return (h != null && rest != null) ? String(h * 100 + rest) : m;
+    });
+    // "five hundred" → "500"
+    out = out.replace(/\b([a-z]+)\s+hundred\b/gi, (m, a) => {
+      const v = N_ONES[a.toLowerCase()];
+      return v != null ? String(v * 100) : m;
+    });
+    // "seventy-eight" / "seventy eight" → "78"
+    out = out.replace(/\b(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)[-\s]+(one|two|three|four|five|six|seven|eight|nine)\b/gi, (m, t, o) => {
+      return String(N_TENS[t.toLowerCase()] + N_ONES[o.toLowerCase()]);
+    });
+    // Standalone tens and teens
+    out = out.replace(/\b(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)\b/gi, (m, t) => String(N_TENS[t.toLowerCase()]));
+    out = out.replace(/\b(ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen)\b/gi, (m, t) => String(N_TEENS[t.toLowerCase()]));
+    // Single-digit words — converts "one" → "1", "two" → "2", etc.
+    // Safe: we apply the same normalization to both sides of the
+    // comparison, so any over-conversion (e.g. "one" as pronoun)
+    // applies equally to trigger and transcript.
+    out = out.replace(/\b(zero|one|two|three|four|five|six|seven|eight|nine)\b/gi, (m, t) => String(N_ONES[t.toLowerCase()]));
+    return out;
   }
 
   function extractPhrasesFromNote(note, n) {
@@ -688,28 +768,39 @@
     for (const sent of sentences) {
       if (phrases.length >= n) break;
       const tokens = sent.split(/\s+/);
-      // Slide a window of 2-4 content words; prefer 3-word phrases.
-      const picks = [];
-      for (let i = 0; i < tokens.length; i++) {
-        for (const len of [3, 4, 2]) {
+      // Slide a window of 2-4 content words; PREFER 2-word phrases
+      // so the match fires as early as possible. Outer loop is LENGTH,
+      // inner is POSITION — this way we exhaust every 2-word position
+      // before falling back to 3- and 4-word windows. Without this
+      // ordering, position i=0 always won with its first valid len,
+      // so we'd get 4-word triggers whenever position 0 had a
+      // 4-word window (common). With this ordering, we find the
+      // shortest-possible distinctive phrase anywhere in the sentence.
+      //
+      // For a 2-word window we require BOTH words to be content
+      // (contentCount >= 2) — that rejects filler like "for the" /
+      // "the next" but accepts distinctive pairs like "fifteen
+      // minutes" / "review paper" / "500 papers".
+      let pick = null;
+      outer:
+      for (const len of [2, 3, 4]) {
+        for (let i = 0; i + len <= tokens.length; i++) {
           const window = tokens.slice(i, i + len);
-          if (window.length < len) continue;
           const contentCount = window.filter(isContent).length;
           if (contentCount < 2) continue;
-          // Keep the phrase as originally spelled (lowercased)
           const raw = window.join(' ')
             .toLowerCase()
             .replace(/[^a-z0-9\-'\s]/g, '')
             .trim();
-          if (!raw || used.has(raw)) continue;
-          picks.push(raw);
-          break;
+          const normalized = normalizeNumbers(raw);
+          if (!normalized || used.has(normalized)) continue;
+          pick = normalized;
+          break outer;
         }
-        if (picks.length) break;
       }
-      if (picks.length) {
-        phrases.push(picks[0]);
-        used.add(picks[0]);
+      if (pick) {
+        phrases.push(pick);
+        used.add(pick);
       }
     }
     return phrases;
@@ -926,7 +1017,11 @@
   let listening = false;
   let finalBuf = '';
   let interimBuf = '';
-  const BUF_MAX = 600;
+  // Tightened from 600. 350 chars ≈ 50-60 words of recent speech,
+  // which is ~20-30 seconds of continuous talk — more than enough
+  // recency for a 2-4 word trigger to match, without keeping old
+  // transcript around long enough to cause false positives.
+  const BUF_MAX = 350;
 
   function setListening(on) {
     listening = !!on;
@@ -1116,9 +1211,11 @@
         if (res.isFinal) newFinal += t;
         else curInterim += t;
       }
-      const cleanFn = s => s.toLowerCase()
-        .replace(/[^a-z0-9\-'\s]/g, ' ')
-        .replace(/\s+/g, ' ');
+      const cleanFn = s => normalizeNumbers(
+        s.toLowerCase()
+          .replace(/[^a-z0-9\-'\s]/g, ' ')
+          .replace(/\s+/g, ' ')
+      );
       if (newFinal) {
         finalBuf = (finalBuf + ' ' + cleanFn(newFinal)).slice(-BUF_MAX);
       }

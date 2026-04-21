@@ -56,6 +56,12 @@
     const sEngine = document.createElement('script');
     sEngine.src = 'engine.js';
     document.body.appendChild(sEngine);
+    // Phone-remote host — adds a `C`-key overlay with QR code that
+    // pairs to public/remote.html on the phone. Loads PeerJS lazily
+    // only after the user first presses `C`.
+    const sRemote = document.createElement('script');
+    sRemote.src = 'remote-host.js';
+    document.body.appendChild(sRemote);
   }));
 })();
 </script>

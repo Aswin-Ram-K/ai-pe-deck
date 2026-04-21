@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#050511">
+<title>Deck remote · AI-PE</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;1,9..144,400&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --bg: #050511;
+    --bg-2: #0d0d22;
+    --ink: #f5f5f0;
+    --ink-2: #c8c8d4;
+    --ink-3: #8b8b9e;
+    --accent: #c46e8f;
+    --rule: rgba(255,255,255,0.12);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Inter Tight', -apple-system, BlinkMacSystemFont, sans-serif;
+    overscroll-behavior: none;
+    -webkit-user-select: none; user-select: none;
+  }
+  body {
+    display: flex; flex-direction: column;
+    /* padding-top/bottom respect the iPhone notch & home indicator */
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Soft radial glow behind everything — matches deck aesthetic */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; z-index: 0;
+    background:
+      radial-gradient(ellipse 60% 50% at 50% 20%,
+        color-mix(in oklch, var(--accent) 30%, transparent), transparent 60%),
+      radial-gradient(ellipse 80% 60% at 50% 90%,
+        color-mix(in oklch, var(--accent) 15%, transparent), transparent 60%);
+    pointer-events: none;
+  }
+
+  /* Header — status, room, label */
+  header {
+    padding: 20px 20px 10px;
+    z-index: 1;
+  }
+  .status-row {
+    display: flex; justify-content: space-between; align-items: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  #status-dot {
+    display: inline-block; width: 8px; height: 8px;
+    border-radius: 50%; background: #666;
+    margin-right: 8px; vertical-align: middle;
+    transition: background 300ms;
+  }
+  .connected #status-dot {
+    background: var(--accent);
+    box-shadow: 0 0 12px var(--accent);
+    animation: dotPulse 1.8s ease-in-out infinite;
+  }
+  @keyframes dotPulse {
+    0%, 100% { opacity: 0.85; }
+    50%      { opacity: 1; transform: scale(1.2); }
+  }
+  #room-id {
+    color: var(--ink-2);
+    letter-spacing: 0.18em;
+  }
+
+  /* Current slide panel */
+  main {
+    flex: 1;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 20px;
+    z-index: 1;
+  }
+  #slide-num {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 148px; line-height: 0.9;
+    font-weight: 400; letter-spacing: -0.04em;
+    color: var(--ink);
+    margin: 0;
+  }
+  #slide-num .of {
+    color: var(--ink-3);
+    font-size: 0.45em;
+    letter-spacing: 0;
+  }
+  #slide-label {
+    margin-top: 14px;
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 22px; font-style: italic;
+    color: var(--ink-2); opacity: 0.8;
+  }
+
+  /* Big prev/next buttons — main control surface */
+  .controls {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    padding: 0 20px 14px;
+    z-index: 1;
+  }
+  .controls button {
+    appearance: none; border: none;
+    font-family: 'Inter Tight', sans-serif;
+    font-size: 18px; font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 28px 20px;
+    border-radius: 14px;
+    color: var(--ink);
+    background: var(--bg-2);
+    border: 1px solid var(--rule);
+    transition: transform 120ms ease, background 160ms ease;
+    cursor: pointer;
+  }
+  .controls button:active {
+    transform: scale(0.96);
+    background: color-mix(in oklch, var(--accent) 45%, var(--bg-2));
+  }
+  .controls #btn-next {
+    background: var(--accent);
+    border-color: transparent;
+    color: #fff;
+  }
+  .controls #btn-next:active {
+    background: color-mix(in oklch, var(--accent) 85%, #000);
+  }
+
+  /* Secondary row — home / end / jump */
+  .secondary {
+    display: grid; grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+    padding: 0 20px 24px;
+    z-index: 1;
+  }
+  .secondary button {
+    appearance: none; border: none;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; font-weight: 500;
+    letter-spacing: 0.16em; text-transform: uppercase;
+    padding: 16px 12px;
+    border-radius: 10px;
+    color: var(--ink-2);
+    background: transparent;
+    border: 1px solid var(--rule);
+    cursor: pointer;
+    transition: background 160ms, color 160ms;
+  }
+  .secondary button:active {
+    background: rgba(255,255,255,0.06);
+    color: var(--ink);
+  }
+
+  /* Error / pairing prompt */
+  #pair-modal {
+    position: fixed; inset: 0; z-index: 10;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(5,5,17,0.95);
+    backdrop-filter: blur(12px);
+  }
+  #pair-modal.hidden { display: none; }
+  #pair-modal .card {
+    max-width: 360px; padding: 32px;
+    text-align: center;
+  }
+  #pair-modal h1 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 32px; font-weight: 400;
+    margin: 0 0 14px;
+  }
+  #pair-modal p {
+    color: var(--ink-3); font-size: 14px;
+    line-height: 1.5; margin: 0 0 22px;
+  }
+  #pair-modal input {
+    appearance: none; border: none;
+    width: 100%; padding: 16px;
+    background: var(--bg-2);
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 22px; font-weight: 500;
+    letter-spacing: 0.18em; text-align: center;
+    color: var(--ink);
+    text-transform: uppercase;
+  }
+  #pair-modal input:focus { outline: 2px solid var(--accent); border-color: transparent; }
+  #pair-modal button {
+    margin-top: 16px; width: 100%;
+    appearance: none; border: none;
+    padding: 16px; border-radius: 10px;
+    background: var(--accent);
+    color: #fff; font-weight: 600; font-size: 15px;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<div id="pair-modal" class="hidden">
+  <div class="card">
+    <h1>Enter room code</h1>
+    <p>Open the deck on your laptop and press <b>C</b> to see the 6-character code.</p>
+    <input id="pair-input" type="text" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="ABCDEF" maxlength="6">
+    <button id="pair-go">Connect</button>
+  </div>
+</div>
+
+<header>
+  <div class="status-row">
+    <span><span id="status-dot"></span><span id="status-text">Connecting…</span></span>
+    <span>Room <span id="room-id">—</span></span>
+  </div>
+</header>
+
+<main>
+  <div id="slide-num">—<span class="of"> / —</span></div>
+  <div id="slide-label">—</div>
+</main>
+
+<div class="controls">
+  <button id="btn-prev">◀&nbsp;&nbsp;Prev</button>
+  <button id="btn-next">Next&nbsp;&nbsp;▶</button>
+</div>
+
+<div class="secondary">
+  <button id="btn-home">Home</button>
+  <button id="btn-end">End</button>
+  <button id="btn-rescan">Rescan</button>
+</div>
+
+<script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+<script src="remote.js"></script>
+
+</body>
+</html>
